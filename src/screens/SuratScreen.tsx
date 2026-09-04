@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
-  Modal, TextInput, ScrollView, ActivityIndicator, Alert,
+  Modal, TextInput, ScrollView, ActivityIndicator, Alert, Keyboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Print from 'expo-print';
@@ -24,11 +24,21 @@ const JENIS_SURAT = [
   'Surat Keterangan Kematian',
 ];
 
-const EMPTY_FORM = { namaPemohon: '', rt: 'RT 001', jenisSurat: JENIS_SURAT[0], keperluan: '' };
+const isRtMatch = (itemRt?: string, targetRt?: string) => {
+  if (!targetRt || targetRt.toLowerCase() === 'semua') return true;
+  if (!itemRt) return false;
+  const num1 = itemRt.replace(/\D/g, '');
+  const num2 = targetRt.replace(/\D/g, '');
+  if (num1 && num2) {
+    return parseInt(num1, 10) === parseInt(num2, 10);
+  }
+  return itemRt.toLowerCase().trim() === targetRt.toLowerCase().trim();
+};
+
+const EMPTY_FORM = { namaPemohon: '', rt: 'RT 001', jenisSurat: JENIS_SURAT[0], customJenisSurat: '', keperluan: '' };
 
 export default function SuratScreen() {
-  const { role, adminName } = useAuth();
-  const isAdmin = role === 'admin';
+  const { role, userRt, guestRt, isRwAdmin, isRtAdmin, isAdmin, isGuest, adminName } = useAuth();
   const [list, setList] = useState<SuratPengantar[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
@@ -52,16 +62,23 @@ export default function SuratScreen() {
     }).catch(() => {});
   }, []);
 
-  // Auto set filter RT jika login sebagai Admin RT tertentu
+  // Auto set filter RT & default form RT jika login sebagai Admin RT tertentu atau Guest dengan guestRt
   useEffect(() => {
-    if (isAdmin && adminName) {
+    if (isRtAdmin && userRt) {
+      setSelectedRt(userRt);
+      setForm(prev => ({ ...prev, rt: userRt }));
+    } else if (isAdmin && adminName) {
       const match = adminName.match(/RT\s*0*([1-9]|1[0-8])/i);
       if (match) {
         const rtNum = parseInt(match[1], 10);
-        setSelectedRt(`RT ${String(rtNum).padStart(3, '0')}`);
+        const matchedRtStr = `RT ${String(rtNum).padStart(3, '0')}`;
+        setSelectedRt(matchedRtStr);
+        setForm(prev => ({ ...prev, rt: matchedRtStr }));
       }
+    } else if (!isAdmin && guestRt) {
+      setForm(prev => ({ ...prev, rt: guestRt }));
     }
-  }, [isAdmin, adminName]);
+  }, [isAdmin, isRtAdmin, userRt, guestRt, adminName]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -120,6 +137,15 @@ export default function SuratScreen() {
     if (!form.namaPemohon || !form.keperluan) {
       Alert.alert('Form Belum Lengkap', 'Nama Pemohon dan Keperluan wajib diisi.');
       return;
+    }
+
+    let finalJenisSurat = form.jenisSurat;
+    if (form.jenisSurat === 'Lainnya') {
+      if (!form.customJenisSurat.trim()) {
+        Alert.alert('Form Belum Lengkap', 'Mohon ketik jenis surat lainnya yang ingin diajukan.');
+        return;
+      }
+      finalJenisSurat = form.customJenisSurat.trim();
     }
 
     setSaving(true);
@@ -185,7 +211,7 @@ export default function SuratScreen() {
         const { error } = await supabase.from('surat_pengantar').insert({
           no_surat: noSurat,
           nama_pemohon: form.namaPemohon.trim(),
-          jenis_surat: form.jenisSurat,
+          jenis_surat: finalJenisSurat,
           keperluan: form.keperluan,
           tanggal: today,
           status: status,
@@ -198,7 +224,7 @@ export default function SuratScreen() {
         id: Date.now().toString(),
         noSurat,
         namaPemohon: form.namaPemohon.trim(),
-        jenisSurat: form.jenisSurat,
+        jenisSurat: finalJenisSurat,
         keperluan: form.keperluan,
         tanggal: today,
         status: status,
@@ -224,7 +250,7 @@ export default function SuratScreen() {
         'Pengajuan Berhasil',
         isAdmin
           ? `Surat ${noSurat} telah berhasil diterbitkan.`
-          : `Pengajuan ${form.jenisSurat} (${noSurat}) telah dikirim.`
+          : `Pengajuan ${finalJenisSurat} (${noSurat}) telah dikirim.`
       );
     } catch (e: any) {
       Alert.alert('Error', e.message || 'Gagal menyimpan pengajuan surat');
@@ -332,20 +358,29 @@ export default function SuratScreen() {
     </TouchableOpacity>
   );
 
-  const baseDisplayList = isAdmin
-    ? list
-    : guestTab === 'antrean'
+  const [searchQuery, setSearchQuery] = useState('');
+
+  const baseDisplayList = (isRtAdmin && userRt)
+    ? list.filter(s => isRtMatch(s.rt, userRt))
+    : isAdmin
       ? list
       : list.filter(s => mySubmittedIds.includes(s.id));
 
   const displayList = baseDisplayList.filter(s => {
-    if (selectedRt === 'semua') return true;
-    if (!s.rt) return true;
-    return s.rt.toLowerCase() === selectedRt.toLowerCase();
+    if (isAdmin && isRtAdmin && userRt && !isRtMatch(s.rt, userRt)) return false;
+    if (isAdmin && selectedRt !== 'semua' && !isRtMatch(s.rt, selectedRt)) return false;
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      const matchName = (s.namaPemohon || '').toLowerCase().includes(q);
+      const matchNo = (s.noSurat || '').toLowerCase().includes(q);
+      const matchJenis = (s.jenisSurat || '').toLowerCase().includes(q);
+      return matchName || matchNo || matchJenis;
+    }
+    return true;
   });
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <View style={styles.header}>
         <Text style={styles.title}>Surat Pengantar</Text>
         <TouchableOpacity style={styles.addBtn} onPress={() => setModalVisible(true)}>
@@ -356,7 +391,7 @@ export default function SuratScreen() {
       <View style={styles.statsRow}>
         <View style={styles.statCard}>
           <Text style={styles.statVal}>{displayList.length}</Text>
-          <Text style={styles.statLbl}>{isAdmin ? 'Total Surat' : (guestTab === 'antrean' ? 'Antrean Publik' : 'Surat Saya')}</Text>
+          <Text style={styles.statLbl}>{isAdmin ? 'Total Surat' : 'Surat Saya'}</Text>
         </View>
         <View style={styles.statCard}>
           <Text style={styles.statVal}>{displayList.filter(s => s.status === 'Selesai').length}</Text>
@@ -368,52 +403,62 @@ export default function SuratScreen() {
         </View>
       </View>
 
-      <View style={styles.filterSection}>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterChips}>
-          <TouchableOpacity
-            style={[styles.chip, selectedRt === 'semua' && styles.chipActive]}
-            onPress={() => setSelectedRt('semua')}
-          >
-            <Text style={[styles.chipText, selectedRt === 'semua' && styles.chipTextActive]}>
-              Semua RT
-            </Text>
-          </TouchableOpacity>
-
-          {LIST_RT.map(rt => (
-            <TouchableOpacity
-              key={rt}
-              style={[styles.chip, selectedRt === rt && styles.chipActive]}
-              onPress={() => setSelectedRt(rt)}
-            >
-              <Text style={[styles.chipText, selectedRt === rt && styles.chipTextActive]}>
-                {rt}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-      </View>
-
-      {!isAdmin && (
-        <View style={styles.tabSwitchContainer}>
-          <View style={styles.tabSwitchBar}>
-            <TouchableOpacity
-              style={[styles.tabSwitchBtn, guestTab === 'antrean' && styles.tabSwitchActive]}
-              onPress={() => setGuestTab('antrean')}
-            >
-              <Text style={[styles.tabSwitchText, guestTab === 'antrean' && styles.tabSwitchTextActive]}>
-                Antrean Publik ({displayList.length})
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.tabSwitchBtn, guestTab === 'saya' && styles.tabSwitchActive]}
-              onPress={() => setGuestTab('saya')}
-            >
-              <Text style={[styles.tabSwitchText, guestTab === 'saya' && styles.tabSwitchTextActive]}>
-                Surat Saya {savedGuestName ? `(${savedGuestName})` : `(${list.filter(s => mySubmittedIds.includes(s.id)).length})`}
-              </Text>
-            </TouchableOpacity>
+      {/* Search Input Box for Surat */}
+      {(isAdmin || displayList.length > 1) && (
+        <View style={{ paddingHorizontal: 20, marginBottom: 12 }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff', borderRadius: 12, paddingHorizontal: 12, paddingVertical: 8, borderWidth: 1, borderColor: '#e2e8f0' }}>
+            <TextInput
+              style={{ flex: 1, fontSize: 13, color: '#333', paddingVertical: 4 }}
+              placeholder={isAdmin ? "Cari nama pemohon atau no. surat..." : "Cari di surat saya..."}
+              placeholderTextColor="#999"
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              returnKeyType="search"
+              onSubmitEditing={Keyboard.dismiss}
+            />
+            {!!searchQuery && (
+              <TouchableOpacity onPress={() => setSearchQuery('')} style={{ padding: 4 }}>
+                <Text style={{ fontSize: 14, color: '#999', fontWeight: 'bold' }}>✕</Text>
+              </TouchableOpacity>
+            )}
           </View>
+        </View>
+      )}
+
+      {isAdmin && (
+        <View style={styles.filterSection}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterChips}>
+            {isRtAdmin && userRt ? (
+              <View style={[styles.chip, styles.chipActive, { backgroundColor: '#00216e' }]}>
+                <Text style={[styles.chipText, styles.chipTextActive]}>
+                  {userRt} (Pengurus RT)
+                </Text>
+              </View>
+            ) : (
+              <>
+                <TouchableOpacity
+                  style={[styles.chip, selectedRt === 'semua' && styles.chipActive]}
+                  onPress={() => setSelectedRt('semua')}
+                >
+                  <Text style={[styles.chipText, selectedRt === 'semua' && styles.chipTextActive]}>
+                    Semua RT
+                  </Text>
+                </TouchableOpacity>
+
+                {LIST_RT.map(rt => (
+                  <TouchableOpacity
+                    key={rt}
+                    style={[styles.chip, selectedRt === rt && styles.chipActive]}
+                    onPress={() => setSelectedRt(rt)}
+                  >
+                    <Text style={[styles.chipText, selectedRt === rt && styles.chipTextActive]}>
+                      {rt}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </>
+            )}
+          </ScrollView>
         </View>
       )}
 
@@ -430,9 +475,9 @@ export default function SuratScreen() {
           ListEmptyComponent={
             <View style={styles.center}>
               <Text style={styles.emptyText}>
-                {selectedRt !== 'semua'
-                  ? `Tidak ada antrean surat untuk ${selectedRt}`
-                  : isAdmin ? 'Belum ada surat pengantar terdaftar' : 'Belum ada riwayat pengajuan surat pribadi'}
+                {isAdmin
+                  ? (selectedRt !== 'semua' ? `Tidak ada antrean surat untuk ${selectedRt}` : 'Belum ada surat pengantar terdaftar')
+                  : 'Belum ada riwayat pengajuan surat pribadi.\nSilakan tekan tombol "+ Ajukan Surat" di atas.'}
               </Text>
             </View>
           }
@@ -528,6 +573,27 @@ export default function SuratScreen() {
                   <Text style={[styles.jenisBtnText, form.jenisSurat === j && styles.jenisBtnTextActive]}>{j}</Text>
                 </TouchableOpacity>
               ))}
+
+              <TouchableOpacity
+                style={[styles.jenisBtn, form.jenisSurat === 'Lainnya' && styles.jenisBtnActive]}
+                onPress={() => setForm(p => ({ ...p, jenisSurat: 'Lainnya' }))}
+              >
+                <Text style={[styles.jenisBtnText, form.jenisSurat === 'Lainnya' && styles.jenisBtnTextActive]}>
+                  + Ketik Jenis Surat Lainnya...
+                </Text>
+              </TouchableOpacity>
+
+              {form.jenisSurat === 'Lainnya' && (
+                <View style={{ marginTop: 2, marginBottom: 8 }}>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Ketik nama jenis surat (cth: Surat Keterangan Beda Nama)..."
+                    placeholderTextColor="#999"
+                    value={form.customJenisSurat}
+                    onChangeText={t => setForm(p => ({ ...p, customJenisSurat: t }))}
+                  />
+                </View>
+              )}
 
               <Text style={styles.inputLabel}>Keperluan Detail</Text>
               <TextInput style={[styles.input, { height: 80, textAlignVertical: 'top' }]} placeholder="Contoh: Persyaratan pembuatan KTP baru / Kelengkapan berkas KUR" placeholderTextColor="#999" multiline value={form.keperluan} onChangeText={t => setForm(p => ({ ...p, keperluan: t }))} />

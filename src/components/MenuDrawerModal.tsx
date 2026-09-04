@@ -6,10 +6,10 @@ import {
   StyleSheet,
   Modal,
   ScrollView,
-  SafeAreaView,
   TouchableWithoutFeedback,
   Alert,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '../context/AuthContext';
 import {
   DashboardIcon,
@@ -21,8 +21,11 @@ import {
   PengumumanIcon,
   SettingsIcon,
   LockIcon,
+  TermsIcon,
 } from './TabIcons';
 import SettingsModal from './SettingsModal';
+import LoginModal from './LoginModal';
+import TermsScreen from '../screens/TermsScreen';
 
 interface MenuDrawerModalProps {
   visible: boolean;
@@ -30,10 +33,14 @@ interface MenuDrawerModalProps {
   navigation: any;
 }
 
+const LIST_RT = Array.from({ length: 18 }, (_, i) => `RT ${String(i + 1).padStart(3, '0')}`);
+
 export default function MenuDrawerModal({ visible, onClose, navigation }: MenuDrawerModalProps) {
-  const { role, adminName, adminUsername, logout } = useAuth();
-  const isAdmin = role === 'admin';
+  const { role, userRt, guestRt, setGuestRt, adminName, adminUsername, logout, isDasaWisma, isAdmin, isGuest } = useAuth();
+  const insets = useSafeAreaInsets();
   const [settingsVisible, setSettingsVisible] = useState(false);
+  const [loginVisible, setLoginVisible] = useState(false);
+  const [termsVisible, setTermsVisible] = useState(false);
 
   const navigateTo = (screenName: string) => {
     onClose();
@@ -41,10 +48,10 @@ export default function MenuDrawerModal({ visible, onClose, navigation }: MenuDr
   };
 
   const handleLogout = () => {
-    Alert.alert('Konfirmasi Logout', 'Apakah Anda yakin ingin keluar dari mode Admin?', [
+    Alert.alert('Konfirmasi Logout', 'Apakah Anda yakin ingin keluar dari mode Admin / Kader?', [
       { text: 'Batal', style: 'cancel' },
       {
-        text: 'Keluar Admin',
+        text: 'Keluar',
         style: 'destructive',
         onPress: async () => {
           await logout();
@@ -54,26 +61,36 @@ export default function MenuDrawerModal({ visible, onClose, navigation }: MenuDr
     ]);
   };
 
+  const getAvatarText = () => {
+    if (!isAdmin) return 'W';
+    if (isDasaWisma) return 'DW';
+    if (userRt) {
+      const num = userRt.replace(/\D/g, '');
+      return num ? `RT${parseInt(num, 10)}` : 'RT';
+    }
+    return 'A';
+  };
+
   return (
     <>
       <Modal visible={visible} animationType="fade" transparent onRequestClose={onClose}>
         <TouchableWithoutFeedback onPress={onClose}>
           <View style={styles.overlay}>
             <TouchableWithoutFeedback onPress={() => {}}>
-              <View style={styles.drawerContent}>
-                <SafeAreaView style={{ flex: 1 }}>
+              <View style={[styles.drawerContent, { paddingTop: Math.max(insets.top, 16), paddingBottom: Math.max(insets.bottom, 16) }]}>
+                <View style={{ flex: 1 }}>
                   <View style={styles.profileHeader}>
                     <View style={styles.avatarWrap}>
-                      <Text style={styles.avatarText}>
-                        {isAdmin ? 'A' : 'W'}
+                      <Text style={[styles.avatarText, (userRt || isDasaWisma) ? { fontSize: 13 } : null]}>
+                        {getAvatarText()}
                       </Text>
                     </View>
                     <View style={styles.profileInfo}>
-                      <Text style={styles.profileTitle}>
-                        {isAdmin ? (adminName || 'Pengurus RW 09') : 'Tamu / Warga'}
+                      <Text style={styles.profileTitle} numberOfLines={1}>
+                        {isAdmin ? (adminName || (isDasaWisma ? 'Kader Dasa Wisma' : (userRt ? `Pengurus ${userRt}` : 'Pengurus RW 09'))) : 'Tamu / Warga'}
                       </Text>
-                      <Text style={styles.profileSub}>
-                        {isAdmin ? `Username: ${adminUsername || 'admin'}` : 'Mode Pengunjung'}
+                      <Text style={styles.profileSub} numberOfLines={1}>
+                        {isAdmin ? (isDasaWisma ? 'Kader Dasa Wisma (Input Warga & Kegiatan)' : (userRt ? `Akses: ${userRt}` : `Username: ${adminUsername || 'admin'}`)) : 'Mode Pengunjung'}
                       </Text>
                     </View>
                     <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
@@ -104,12 +121,10 @@ export default function MenuDrawerModal({ visible, onClose, navigation }: MenuDr
                       <Text style={styles.menuLabel}>Agenda Kegiatan</Text>
                     </TouchableOpacity>
 
-                    {isAdmin && (
-                      <TouchableOpacity style={styles.menuItem} onPress={() => navigateTo('Iuran')}>
-                        <IuranIcon color="#00216e" size={20} />
-                        <Text style={styles.menuLabel}>Data Iuran Warga</Text>
-                      </TouchableOpacity>
-                    )}
+                    <TouchableOpacity style={styles.menuItem} onPress={() => navigateTo('Iuran')}>
+                      <IuranIcon color="#00216e" size={20} />
+                      <Text style={styles.menuLabel}>Data Iuran Warga</Text>
+                    </TouchableOpacity>
 
                     <TouchableOpacity style={styles.menuItem} onPress={() => navigateTo('Surat')}>
                       <SuratIcon color="#00216e" size={20} />
@@ -121,7 +136,12 @@ export default function MenuDrawerModal({ visible, onClose, navigation }: MenuDr
                       <Text style={styles.menuLabel}>Pengumuman</Text>
                     </TouchableOpacity>
 
-                    {isAdmin && (
+                    <TouchableOpacity style={styles.menuItem} onPress={() => setTermsVisible(true)}>
+                      <TermsIcon color="#00216e" size={20} />
+                      <Text style={styles.menuLabel}>Syarat & Ketentuan</Text>
+                    </TouchableOpacity>
+
+                    {isAdmin ? (
                       <>
                         <View style={styles.divider} />
                         <Text style={styles.sectionHeader}>PENGATURAN AKUN</Text>
@@ -133,6 +153,57 @@ export default function MenuDrawerModal({ visible, onClose, navigation }: MenuDr
                           <Text style={styles.menuLabel}>Ubah Username & Password</Text>
                         </TouchableOpacity>
                       </>
+                    ) : (
+                      <>
+                        <View style={styles.divider} />
+                        <Text style={styles.sectionHeader}>WILAYAH RT SAYA (TANPA LOGIN)</Text>
+                        {guestRt ? (
+                          <View style={{ backgroundColor: '#eef2fa', borderRadius: 12, padding: 12, marginBottom: 10, borderWidth: 1, borderColor: '#c7d2fe' }}>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                              <LockIcon color="#00216e" size={18} />
+                              <View style={{ flex: 1 }}>
+                                <Text style={{ fontSize: 10, fontWeight: 'bold', color: '#00216e', letterSpacing: 0.5 }}>WILAYAH RT TERKUNCI PERMANEN</Text>
+                                <Text style={{ fontSize: 14, fontWeight: 'bold', color: '#00216e', marginTop: 1 }}>{guestRt}</Text>
+                              </View>
+                            </View>
+                            <Text style={{ fontSize: 10, color: '#666', marginTop: 6, lineHeight: 14 }}>
+                              Aplikasi di HP ini disetel khusus untuk warga {guestRt}.
+                            </Text>
+                          </View>
+                        ) : (
+                          <View style={{ backgroundColor: '#f0f4fd', borderRadius: 12, padding: 12, marginBottom: 10, borderWidth: 1, borderColor: '#d0dbe9' }}>
+                            <Text style={{ fontSize: 11, fontWeight: 'bold', color: '#00216e', letterSpacing: 0.5, marginBottom: 4 }}>
+                              PILIH RT RUMAH ANDA (1x PILIH):
+                            </Text>
+                            <Text style={{ fontSize: 11, color: '#555', marginBottom: 8, lineHeight: 15 }}>
+                              Pilih RT tempat tinggal Anda. Wilayah ini akan dikunci pada HP Anda.
+                            </Text>
+                            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                              {LIST_RT.map(rt => (
+                                <TouchableOpacity
+                                  key={rt}
+                                  style={{ paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14, backgroundColor: '#00216e', marginRight: 6 }}
+                                  onPress={() => {
+                                    Alert.alert(
+                                      'Konfirmasi Wilayah RT',
+                                      `Tetapkan ${rt} sebagai wilayah RT tempat tinggal Anda pada HP ini?`,
+                                      [
+                                        { text: 'Batal', style: 'cancel' },
+                                        { text: 'Ya, Tetapkan 1x', onPress: () => setGuestRt(rt) }
+                                      ]
+                                    );
+                                  }}
+                                >
+                                  <Text style={{ fontSize: 11, color: '#fff', fontWeight: 'bold' }}>
+                                    {rt}
+                                  </Text>
+                                </TouchableOpacity>
+                              ))}
+                            </ScrollView>
+                          </View>
+                        )}
+
+                      </>
                     )}
                   </ScrollView>
 
@@ -143,10 +214,16 @@ export default function MenuDrawerModal({ visible, onClose, navigation }: MenuDr
                         <Text style={styles.logoutText}>Keluar dari Mode Admin</Text>
                       </TouchableOpacity>
                     ) : (
-                      <Text style={styles.versionText}>Kebazeni RW 09 v1.0.0</Text>
+                      <View style={{ gap: 8 }}>
+                        <TouchableOpacity style={styles.loginDrawerBtn} onPress={() => setLoginVisible(true)}>
+                          <LockIcon color="#fff" size={16} />
+                          <Text style={styles.loginDrawerBtnText}>Login Admin / Pengurus</Text>
+                        </TouchableOpacity>
+                        <Text style={styles.versionText}>Kebazeni RW 09 v1.2.3</Text>
+                      </View>
                     )}
                   </View>
-                </SafeAreaView>
+                </View>
               </View>
             </TouchableWithoutFeedback>
           </View>
@@ -157,6 +234,15 @@ export default function MenuDrawerModal({ visible, onClose, navigation }: MenuDr
         visible={settingsVisible}
         onClose={() => setSettingsVisible(false)}
       />
+
+      <LoginModal
+        visible={loginVisible}
+        onClose={() => setLoginVisible(false)}
+      />
+
+      <Modal visible={termsVisible} animationType="slide" onRequestClose={() => setTermsVisible(false)}>
+        <TermsScreen isModal onClose={() => setTermsVisible(false)} />
+      </Modal>
     </>
   );
 }
@@ -274,5 +360,19 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     fontSize: 11,
     color: '#999',
+  },
+  loginDrawerBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#00216e',
+    paddingVertical: 12,
+    borderRadius: 10,
+    gap: 8,
+  },
+  loginDrawerBtnText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: 'bold',
   },
 });

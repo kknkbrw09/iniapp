@@ -140,6 +140,18 @@ export function SettingsIcon({ color = '#00216e', size = 22 }: IconProps) {
   );
 }
 
+// 12. Terms / Scroll Icon
+export function TermsIcon({ color = '#00216e', size = 20 }: IconProps) {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24" fill="none">
+      <Path d="M19 3H5C3.89 3 3 3.89 3 5V19C3 20.11 3.89 21 5 21H19C20.11 21 21 20.11 21 19V5C21 3.89 20.11 3 19 3Z" stroke={color} strokeWidth="2" strokeLinejoin="round" />
+      <Line x1="7" y1="7" x2="17" y2="7" stroke={color} strokeWidth="2" strokeLinecap="round" />
+      <Line x1="7" y1="11" x2="17" y2="11" stroke={color} strokeWidth="2" strokeLinecap="round" />
+      <Line x1="7" y1="15" x2="13" y2="15" stroke={color} strokeWidth="2" strokeLinecap="round" />
+    </Svg>
+  );
+}
+
 export function renderTabIcon(routeName: string, color: string) {
   switch (routeName) {
     case 'Dashboard':

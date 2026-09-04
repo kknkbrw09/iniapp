@@ -10,6 +10,7 @@ import {
   ScrollView,
   ActivityIndicator,
   Alert,
+  Keyboard,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Warga } from '../types';
@@ -20,6 +21,7 @@ import { CardListSkeleton } from '../components/SkeletonLoader';
 import { DataCache } from '../utils/cache';
 import { SearchIcon, LockIcon } from '../components/TabIcons';
 import LoginModal from '../components/LoginModal';
+import { exportToExcel } from '../utils/excelExport';
 
 const extractAndNormalizeRt = (rtVal?: any, alamatVal?: any): string => {
   let str = (rtVal || '').toString().trim();
@@ -62,6 +64,26 @@ const STATUS_KELUARGA_OPTIONS = [
   'Lainnya',
 ];
 
+const STATUS_DOMISILI_OPTIONS = [
+  'Warga Tetap (KTP & Domisili Sini)',
+  'Kontrak / Kos (Domisili Sini, KTP Luar)',
+  'KTP Sini (Tinggal / Domisili di Luar)',
+];
+
+const getDomisiliBadgeStyle = (statusStr?: string) => {
+  const s = (statusStr || '').toLowerCase();
+  if (s.includes('kontrak') || s.includes('kos')) return { backgroundColor: '#e0f2fe', borderColor: '#bae6fd' };
+  if (s.includes('luar') || s.includes('tidak tinggal')) return { backgroundColor: '#f3e8ff', borderColor: '#e9d5ff' };
+  return { backgroundColor: '#eef2fa', borderColor: '#c7d2fe' };
+};
+
+const getDomisiliBadgeTextStyle = (statusStr?: string) => {
+  const s = (statusStr || '').toLowerCase();
+  if (s.includes('kontrak') || s.includes('kos')) return { color: '#0369a1' };
+  if (s.includes('luar') || s.includes('tidak tinggal')) return { color: '#6b21a8' };
+  return { color: '#00216e' };
+};
+
 const CURRENT_YEAR = new Date().getFullYear();
 const YEAR_OPTIONS = Array.from({ length: 105 }, (_, i) => (CURRENT_YEAR - i).toString());
 
@@ -69,8 +91,11 @@ const EMPTY_FORM = {
   nama: '',
   noRumah: '',
   rt: 'RT 001',
-  rw: 'RW 009',
-  status: 'Tetap' as 'Tetap' | 'Kontrak',
+  rw: 'RW 09',
+  status: 'Warga Tetap (KTP & Domisili Sini)',
+  statusDomisili: 'Warga Tetap (KTP & Domisili Sini)',
+  alamatKtp: '',
+  alamatDomisili: '',
   jenisKelamin: 'Laki-laki' as 'Laki-laki' | 'Perempuan',
   tahunLahir: '1998',
   hubunganKk: 'Kepala Keluarga',
@@ -80,12 +105,13 @@ const EMPTY_FORM = {
 type CategoryFilter = 'semua' | 'dewasa' | 'remaja' | 'lansia' | 'balita' | 'kk';
 
 export default function WargaScreen() {
-  const { role } = useAuth();
-  const isAdmin = role === 'admin';
+  const { role, userRt, guestRt, isRwAdmin, isRtAdmin, isAdmin, isGuest } = useAuth();
 
   const [wargaList, setWargaList] = useState<Warga[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
   const [detailModalVisible, setDetailModalVisible] = useState(false);
   const [addModalVisible, setAddModalVisible] = useState(false);
   const [loginModalVisible, setLoginModalVisible] = useState(false);
@@ -102,14 +128,40 @@ export default function WargaScreen() {
   const [showTahunDropdown, setShowTahunDropdown] = useState(false);
 
   useEffect(() => {
+    if (isRtAdmin && userRt) {
+      setSelectedRt(userRt);
+    } else if (isGuest && guestRt) {
+      setSelectedRt(guestRt);
+    }
+  }, [isRtAdmin, userRt, isGuest, guestRt]);
+
+  // 1-Second (1000ms) Debounce for Search Query
+  useEffect(() => {
+    const trimmed = searchQuery.trim();
+    if (!trimmed) {
+      setDebouncedSearchQuery('');
+      setIsSearching(false);
+      return;
+    }
+
+    setIsSearching(true);
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(trimmed);
+      setIsSearching(false);
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  useEffect(() => {
     setDisplayLimit(5);
-  }, [searchQuery, selectedRt, selectedCategory]);
+  }, [debouncedSearchQuery, selectedRt, selectedCategory]);
 
   const fetchWarga = useCallback(async () => {
     setLoading(true);
     try {
       logger.addLog('API', 'GET /warga', 'Fetching all warga from Supabase...');
-      const selectFields = !isAdmin ? 'status_keluarga, gender, tahun_lahir, rt' : '*';
+      const selectFields = '*';
 
       let allRows: any[] = [];
       let page = 0;
@@ -146,6 +198,7 @@ export default function WargaScreen() {
         const noRumahStr = d.nomor_rumah || d.no_rumah || '';
         const rtStr = extractAndNormalizeRt(d.rt, d.alamat);
         const fullAlamat = d.alamat || (noRumahStr ? `No. ${noRumahStr}, ${rtStr} / RW 09` : `${rtStr} / RW 09, Kebon Bawang`);
+        const domisiliStr = d.status_domisili || d.status_tinggal || d.status || 'Warga Tetap (KTP & Domisili Sini)';
 
         return {
           id: String(d.id || idx + 1),
@@ -155,7 +208,10 @@ export default function WargaScreen() {
           alamat: fullAlamat,
           rt: rtStr,
           rw: 'RW 09',
-          status: 'Tetap',
+          status: domisiliStr,
+          statusDomisili: domisiliStr,
+          alamatKtp: d.alamat_ktp || d.alamat_asal || '',
+          alamatDomisili: d.alamat_domisili || d.domisili_riil || '',
           jenisKelamin: d.gender || d.jenis_kelamin || 'Laki-laki',
           usia: age >= 0 ? age : 25,
           tanggalLahir: tLahir.toString(),
@@ -248,9 +304,14 @@ const isValidHouseNumber = (no?: string): boolean => {
       let insertedId = Date.now().toString();
 
       if (isSupabaseConfigured) {
+        const domisiliToSave = formData.statusDomisili || formData.status || 'Warga Tetap (KTP & Domisili Sini)';
         const payload: Record<string, any> = {
           nama: formData.nama.trim(),
           status_keluarga: formData.hubunganKk,
+          status_domisili: domisiliToSave,
+          status: domisiliToSave,
+          alamat_ktp: formData.alamatKtp.trim(),
+          alamat_domisili: formData.alamatDomisili.trim(),
           gender: formData.jenisKelamin,
           tahun_lahir: tahunLahirInt,
           rt: formData.rt,
@@ -266,12 +327,18 @@ const isValidHouseNumber = (no?: string): boolean => {
 
         const { data, error } = await supabase.from('warga').insert(payload).select();
         if (error) {
-          console.warn('Supabase insert warning:', error.message);
+          delete payload.alamat_ktp;
+          delete payload.alamat_domisili;
+          const { data: dataFb } = await supabase.from('warga').insert(payload).select();
+          if (dataFb && dataFb[0] && dataFb[0].id) {
+            insertedId = String(dataFb[0].id);
+          }
         } else if (data && data[0] && data[0].id) {
           insertedId = String(data[0].id);
         }
       }
 
+      const domisiliToSave = formData.statusDomisili || formData.status || 'Warga Tetap (KTP & Domisili Sini)';
       const newWarga: Warga = {
         id: insertedId,
         nama: formData.nama.trim(),
@@ -280,7 +347,10 @@ const isValidHouseNumber = (no?: string): boolean => {
         alamat: fullAlamat,
         rt: formData.rt,
         rw: formData.rw,
-        status: formData.status,
+        status: domisiliToSave,
+        statusDomisili: domisiliToSave,
+        alamatKtp: formData.alamatKtp.trim(),
+        alamatDomisili: formData.alamatDomisili.trim(),
         jenisKelamin: formData.jenisKelamin,
         usia: calculatedAge,
         tanggalLahir: tahunLahirInt.toString(),
@@ -340,7 +410,7 @@ const isValidHouseNumber = (no?: string): boolean => {
 
   // Filter warga based on Search Query, Selected RT, and Category
   const filtered = wargaList.filter(w => {
-    const q = searchQuery.toLowerCase().trim();
+    const q = debouncedSearchQuery.toLowerCase().trim();
     const matchQuery = (() => {
       if (!q) return true;
       const terms = q.split(/\s+/).filter(Boolean);
@@ -404,6 +474,7 @@ const isValidHouseNumber = (no?: string): boolean => {
                      (item.hubunganKk && item.hubunganKk.trim().toLowerCase() === 'kepala keluarga');
     const familyMembers = isKepala ? getFamilyMembersForKk(item) : [];
     const isExpanded = expandedKkIds.includes(item.id);
+    const domisiliLabel = item.statusDomisili || item.status || 'Warga Tetap';
 
     return (
       <View style={styles.cardContainer}>
@@ -416,8 +487,29 @@ const isValidHouseNumber = (no?: string): boolean => {
               <Text style={styles.avatarText}>{initials}</Text>
             </View>
             <View style={styles.cardInfo}>
-              <Text style={styles.cardName}>{item.nama}</Text>
-              <Text style={styles.cardSub}>{item.jenisKelamin}, Lahir {item.tanggalLahir || '-'} ({item.usia} Thn) • {item.rt}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                <Text style={styles.cardName}>{item.nama}</Text>
+                {/* Status Keberadaan / Domisili Badge */}
+                <View style={[styles.domisiliBadge, getDomisiliBadgeStyle(domisiliLabel)]}>
+                  <Text style={[styles.domisiliBadgeText, getDomisiliBadgeTextStyle(domisiliLabel)]}>
+                    {domisiliLabel}
+                  </Text>
+                </View>
+              </View>
+              <Text style={styles.cardSub}>
+                {item.jenisKelamin}, Lahir {item.tanggalLahir || '-'} ({item.usia} Thn) • {item.rt}
+                {isAdmin ? ` • ${item.hubunganKk}` : ''}
+              </Text>
+              {!!item.alamatKtp && (
+                <Text style={{ fontSize: 11, color: '#0369a1', marginTop: 2, fontWeight: '500' }}>
+                  Alamat KTP: {item.alamatKtp}
+                </Text>
+              )}
+              {!!item.alamatDomisili && (
+                <Text style={{ fontSize: 11, color: '#6b21a8', marginTop: 2, fontWeight: '500' }}>
+                  Domisili Riil: {item.alamatDomisili}
+                </Text>
+              )}
               <Text style={styles.cardAlamat} numberOfLines={1}>{item.alamat}</Text>
             </View>
 
@@ -434,8 +526,8 @@ const isValidHouseNumber = (no?: string): boolean => {
             )}
           </View>
 
-          {/* Toggle Expand KK Family Members Button - Only shown when category filter is 'kk' */}
-          {isKepala && selectedCategory === 'kk' && familyMembers.length > 0 && (
+          {/* Toggle Expand KK Family Members Button - ONLY FOR ADMIN */}
+          {isAdmin && isKepala && selectedCategory === 'kk' && familyMembers.length > 0 && (
             <TouchableOpacity
               style={styles.expandKkBtn}
               onPress={(e) => {
@@ -450,8 +542,8 @@ const isValidHouseNumber = (no?: string): boolean => {
           )}
         </TouchableOpacity>
 
-        {/* Nested Family Members Structure (Parent-Child Hierarchy) - Only shown when category filter is 'kk' */}
-        {isKepala && selectedCategory === 'kk' && isExpanded && familyMembers.length > 0 && (
+        {/* Nested Family Members Structure - ONLY FOR ADMIN */}
+        {isAdmin && isKepala && selectedCategory === 'kk' && isExpanded && familyMembers.length > 0 && (
           <View style={styles.nestedFamilyWrap}>
             <Text style={styles.nestedFamilyTitle}>
               Anggota Keluarga (Menginduk KK {item.nama}):
@@ -488,43 +580,129 @@ const isValidHouseNumber = (no?: string): boolean => {
     );
   };
 
+  const handleExportExcel = async () => {
+    if (!isAdmin) {
+      Alert.alert('Akses Ditolak', 'Fitur Export Excel hanya dapat digunakan oleh Pengurus Admin RT/RW.');
+      return;
+    }
+
+    const headers = [
+      'No',
+      'Nama Warga',
+      'RT',
+      'RW',
+      'No. Rumah / Alamat',
+      'Alamat KTP',
+      'Domisili Riil',
+      'Jenis Kelamin',
+      'Tahun Lahir',
+      'Usia (Thn)',
+      'Status Keluarga',
+      'Status Domisili',
+    ];
+
+    const rows = filtered.map((item: Warga, idx: number) => [
+      idx + 1,
+      item.nama,
+      item.rt || 'RT 001',
+      item.rw || 'RW 09',
+      item.alamat || '-',
+      item.alamatKtp || '-',
+      item.alamatDomisili || '-',
+      item.jenisKelamin || '-',
+      item.tanggalLahir || '-',
+      item.usia ?? '-',
+      item.hubunganKk || item.peranKk || '-',
+      item.statusDomisili || item.status || '-',
+    ]);
+
+    const activeRt = selectedRt === 'semua' ? 'RW09' : selectedRt.replace(/\s+/g, '_');
+    await exportToExcel(`Data_Warga_${activeRt}`, headers, rows);
+  };
+
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <View style={styles.header}>
-        <Text style={styles.title}>Data Warga & KK</Text>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.title}>Data Warga & KK</Text>
+          <Text style={{ fontSize: 13, color: '#666', marginTop: 2 }}>
+            {isRtAdmin && userRt
+              ? `Wilayah: ${userRt}`
+              : (isRwAdmin
+                  ? (selectedRt === 'semua' ? 'Wilayah: Seluruh RW 09' : `Wilayah: ${selectedRt}`)
+                  : (guestRt ? `Wilayah: ${guestRt}` : 'Wilayah: RW 09'))}
+          </Text>
+        </View>
         <View style={styles.headerActions}>
+          {isAdmin && (
+            <TouchableOpacity
+              style={[styles.addBtn, { backgroundColor: '#15803d', marginRight: 4, paddingHorizontal: 10 }]}
+              onPress={handleExportExcel}
+            >
+              <Text style={styles.addBtnText}>📊 Excel</Text>
+            </TouchableOpacity>
+          )}
           {isAdmin ? (
             <TouchableOpacity style={styles.addBtn} onPress={() => setAddModalVisible(true)}>
-              <Text style={styles.addBtnText}>+ Tambah Warga</Text>
+              <Text style={styles.addBtnText}>+ Warga</Text>
             </TouchableOpacity>
           ) : (
             <TouchableOpacity style={styles.loginAdminHeaderBtn} onPress={() => setLoginModalVisible(true)}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <LockIcon color="#fff" size={15} />
-                <Text style={styles.loginAdminHeaderBtnText}>Login Admin</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <LockIcon color="#fff" size={13} />
+                <Text style={styles.loginAdminHeaderBtnText}>Admin</Text>
               </View>
             </TouchableOpacity>
           )}
         </View>
       </View>
 
-      {/* Filter RT Chips Selector - Available for both Admin and Guest Mode */}
-      <View style={styles.rtFilterSection}>
-        <Text style={styles.rtFilterLabel}>Filter Wilayah RT:</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll} contentContainerStyle={{ paddingHorizontal: 20 }}>
-          {rtOptions.map(rt => (
-            <TouchableOpacity
-              key={rt}
-              style={[styles.filterChip, selectedRt === rt && styles.filterChipActive]}
-              onPress={() => setSelectedRt(rt)}
-            >
-              <Text style={[styles.filterChipText, selectedRt === rt && styles.filterChipTextActive]}>
-                {rt === 'semua' ? 'Semua RT' : rt}
-              </Text>
+      {/* Search Input Box - Rendered for both Admin and Guest */}
+      <View style={styles.searchWrap}>
+        <View style={styles.searchBoxContainer}>
+          <View style={{ marginRight: 6, marginLeft: 2 }}>
+            <SearchIcon color="#00216e" size={18} />
+          </View>
+          <TextInput
+            style={styles.searchInput}
+            placeholder={isAdmin ? "Cari nama, RT, status keluarga, atau alamat..." : "Cek nama Anda (misal: Budi Santoso)..."}
+            placeholderTextColor="#999"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+            returnKeyType="search"
+            onSubmitEditing={Keyboard.dismiss}
+          />
+          {isSearching ? (
+            <ActivityIndicator size="small" color="#00216e" style={{ marginRight: 6 }} />
+          ) : !!searchQuery ? (
+            <TouchableOpacity onPress={() => { setSearchQuery(''); setDebouncedSearchQuery(''); }} style={styles.clearBtn}>
+              <Text style={styles.clearText}>✕</Text>
             </TouchableOpacity>
-          ))}
-        </ScrollView>
+          ) : null}
+        </View>
       </View>
+
+      {/* Filter RT Chips Selector - ONLY for RW Admin */}
+      {isRwAdmin && (
+        <View style={styles.rtFilterSection}>
+          <Text style={styles.rtFilterLabel}>
+            Filter Wilayah RT:
+          </Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll} contentContainerStyle={{ paddingHorizontal: 20 }}>
+            {rtOptions.map(rt => (
+              <TouchableOpacity
+                key={rt}
+                style={[styles.filterChip, selectedRt === rt && styles.filterChipActive]}
+                onPress={() => setSelectedRt(rt)}
+              >
+                <Text style={[styles.filterChipText, selectedRt === rt && styles.filterChipTextActive]}>
+                  {rt === 'semua' ? 'Semua RT' : rt}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+      )}
 
       {/* Interactive Stats Cards (Dynamically Recalculated based on Selected RT) */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.statsScroll} contentContainerStyle={{ paddingHorizontal: 20 }}>
@@ -550,52 +728,112 @@ const isValidHouseNumber = (no?: string): boolean => {
       </ScrollView>
 
       {!isAdmin ? (
-        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 10, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
-          <View style={styles.guestNoticeCard}>
-            <View style={styles.guestNoticeHeader}>
-              <View style={styles.lockIconBadge}>
-                <LockIcon color="#00216e" size={24} />
+        !searchQuery.trim() && !debouncedSearchQuery ? (
+          <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 10, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
+            <View style={styles.guestNoticeCard}>
+              <View style={styles.guestNoticeHeader}>
+                <View style={styles.searchIconBadge}>
+                  <SearchIcon color="#00216e" size={24} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.guestNoticeTitle}>Cek Status Pendaftaran Warga</Text>
+                  <Text style={styles.guestNoticeSub}>Basis Data Kependudukan RW 09</Text>
+                </View>
               </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.guestNoticeTitle}>Daftar Nama Warga Dilindungi</Text>
-                <Text style={styles.guestNoticeSub}>Privasi & Kerahasiaan Data Kependudukan</Text>
+              <Text style={styles.guestNoticeDesc}>
+                Ketik nama Anda atau anggota keluarga Anda pada kolom pencarian di atas untuk mengecek apakah Anda sudah terdaftar di sistem RW 09.
+              </Text>
+              <View style={styles.guestInstructionBox}>
+                <View style={styles.guestInstructionRow}>
+                  <Text style={styles.guestInstructionBadge}>Status Domisili</Text>
+                  <Text style={styles.guestInstructionText}>Warga Tetap • Warga Kontrak • Warga Kos • KTP RW 09 (Tidak Tinggal di Sini)</Text>
+                </View>
               </View>
+              <TouchableOpacity style={styles.guestLoginActionBtn} onPress={() => setLoginModalVisible(true)}>
+                <LockIcon color="#fff" size={16} />
+                <Text style={styles.guestLoginActionText}>Login Admin Pengurus</Text>
+              </TouchableOpacity>
             </View>
-            <Text style={styles.guestNoticeDesc}>
-              Demi menjaga privasi kependudukan warga RW 09, rincian data nama dan alamat warga disembunyikan untuk publik. Warga dan masyarakat umum dapat memantau akumulasi total statistik pada kartu di atas per RT.
-            </Text>
-            <Text style={styles.guestNoticeDesc}>
-              Silakan login sebagai <Text style={{ fontWeight: 'bold', color: '#00216e' }}>Admin Pengurus</Text> untuk memuat dan mengelola rincian data warga.
-            </Text>
-            <TouchableOpacity style={styles.guestLoginActionBtn} onPress={() => setLoginModalVisible(true)}>
-              <LockIcon color="#fff" size={16} />
-              <Text style={styles.guestLoginActionText}>Login Admin Pengurus</Text>
-            </TouchableOpacity>
+          </ScrollView>
+        ) : isSearching ? (
+          <View style={{ flex: 1, paddingHorizontal: 20, paddingTop: 30, alignItems: 'center' }}>
+            <ActivityIndicator size="large" color="#00216e" style={{ marginBottom: 12 }} />
+            <Text style={{ fontSize: 13, color: '#00216e', fontWeight: 'bold' }}>Sedang mencari data warga...</Text>
+            <Text style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>Hasil akan muncul setelah selesai mengetik</Text>
           </View>
-        </ScrollView>
+        ) : (
+          <>
+            <View style={styles.resultInfoWrap}>
+              <Text style={styles.resultInfoText}>
+                Hasil pencarian nama "<Text style={styles.boldText}>{debouncedSearchQuery}</Text>":{' '}
+                <Text style={styles.boldText}>{filtered.length}</Text> data ditemukan
+                {selectedRt !== 'semua' ? ` di ${selectedRt}` : ''}
+              </Text>
+            </View>
+
+            {loading ? (
+              <CardListSkeleton count={4} />
+            ) : filtered.length > 0 ? (
+              <FlatList
+                style={{ flex: 1 }}
+                data={filtered.slice(0, displayLimit)}
+                renderItem={renderItem}
+                keyExtractor={i => i.id}
+                contentContainerStyle={styles.list}
+                showsVerticalScrollIndicator={false}
+                ListFooterComponent={
+                  filtered.length > 5 ? (
+                    <View style={styles.footerWrap}>
+                      {displayLimit < filtered.length ? (
+                        <TouchableOpacity
+                          style={styles.expandBtn}
+                          onPress={() => setDisplayLimit(prev => Math.min(prev + 5, filtered.length))}
+                        >
+                          <Text style={styles.expandBtnText}>Tampilkan Lebih Banyak</Text>
+                        </TouchableOpacity>
+                      ) : (
+                        <TouchableOpacity
+                          style={styles.collapseBtn}
+                          onPress={() => setDisplayLimit(5)}
+                        >
+                          <Text style={styles.collapseBtnText}>Sembunyikan</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  ) : null
+                }
+              />
+            ) : (
+              <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 10, paddingBottom: 40 }} showsVerticalScrollIndicator={false}>
+                <View style={styles.guestNotFoundCard}>
+                  <View style={styles.guestNotFoundHeader}>
+                    <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: '#ffebee', justifyContent: 'center', alignItems: 'center' }}>
+                      <Text style={{ fontSize: 14, color: '#d32f2f', fontWeight: 'bold' }}>✕</Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.guestNotFoundTitle}>Belum Terdaftar</Text>
+                      <Text style={styles.guestNotFoundSub}>Nama "{debouncedSearchQuery}" tidak ditemukan</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.guestNotFoundDesc}>
+                    Data warga dengan nama tersebut belum tercatat dalam basis data kependudukan RW 09 Kebon Bawang.
+                  </Text>
+                  <View style={styles.guestTipsBox}>
+                    <Text style={styles.guestTipsTitle}>Petunjuk & Langkah Selanjutnya:</Text>
+                    <Text style={styles.guestTipItem}>• Pastikan ejaan nama yang Anda masukkan sudah benar.</Text>
+                    <Text style={styles.guestTipItem}>• Coba cari dengan nama depan atau nama belakang saja.</Text>
+                    <Text style={styles.guestTipItem}>• Jika Anda warga RW 09 tetapi belum terdaftar, silakan hubungi Ketua RT setempat {selectedRt !== 'semua' ? `(${selectedRt})` : ''} untuk pendaftaran baru.</Text>
+                  </View>
+                  <TouchableOpacity style={styles.resetSearchBtn} onPress={() => { setSearchQuery(''); setDebouncedSearchQuery(''); }}>
+                    <Text style={styles.resetSearchBtnText}>Reset Pencarian</Text>
+                  </TouchableOpacity>
+                </View>
+              </ScrollView>
+            )}
+          </>
+        )
       ) : (
         <>
-          {/* Search Input Box */}
-          <View style={styles.searchWrap}>
-            <View style={styles.searchBoxContainer}>
-              <View style={{ marginRight: 6, marginLeft: 2 }}>
-                <SearchIcon color="#888" size={18} />
-              </View>
-              <TextInput
-                style={styles.searchInput}
-                placeholder="Cari nama, RT, status keluarga, atau alamat..."
-                placeholderTextColor="#999"
-                value={searchQuery}
-                onChangeText={setSearchQuery}
-              />
-              {!!searchQuery && (
-                <TouchableOpacity onPress={() => setSearchQuery('')} style={styles.clearBtn}>
-                  <Text style={styles.clearText}>✕</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          </View>
-
           {/* Result Indicator */}
           <View style={styles.resultInfoWrap}>
             <Text style={styles.resultInfoText}>
@@ -646,12 +884,12 @@ const isValidHouseNumber = (no?: string): boolean => {
         </>
       )}
 
-      {/* Detail Modal with Kartu Keluarga Parent-Child Hierarchy */}
+      {/* Detail Modal */}
       <Modal visible={detailModalVisible} animationType="slide" transparent onRequestClose={() => setDetailModalVisible(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalBox}>
             <View style={styles.modalHead}>
-              <Text style={styles.modalTitle}>Detail Warga & Kartu Keluarga</Text>
+              <Text style={styles.modalTitle}>{isAdmin ? 'Detail Warga & Kartu Keluarga' : 'Detail Informasi Warga'}</Text>
               <TouchableOpacity onPress={() => setDetailModalVisible(false)}><Text style={styles.closeX}>✕</Text></TouchableOpacity>
             </View>
             {selectedWarga && (() => {
@@ -659,34 +897,52 @@ const isValidHouseNumber = (no?: string): boolean => {
                                         (selectedWarga.hubunganKk && selectedWarga.hubunganKk.trim().toLowerCase() === 'kepala keluarga');
               const familyMembers = isKepalaSelected ? getFamilyMembersForKk(selectedWarga) : [];
               const parentKk = !isKepalaSelected ? getParentKkForMember(selectedWarga) : null;
+              const domisiliText = selectedWarga.statusDomisili || selectedWarga.status || 'Warga Tetap';
 
-              return (
-                <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 }}>
-                  {/* Status Banner */}
-                  <View style={[styles.modalBanner, isKepalaSelected ? styles.modalBannerParent : styles.modalBannerChild]}>
-                    <Text style={styles.modalBannerTitle}>
-                      {isKepalaSelected ? 'KARTU KELUARGA (PARENT KK)' : `ANGGOTA KELUARGA (${selectedWarga.hubunganKk.toUpperCase()})`}
-                    </Text>
-                  </View>
-
-                  {[
+              const detailRows = isAdmin
+                ? [
                     ['Nama Warga', selectedWarga.nama],
+                    ['Status Keberadaan / Domisili', domisiliText],
+                    ...(selectedWarga.alamatKtp ? [['Alamat KTP Asal', selectedWarga.alamatKtp]] : []),
+                    ...(selectedWarga.alamatDomisili ? [['Alamat Domisili Riil (Luar)', selectedWarga.alamatDomisili]] : []),
                     ['Status Keluarga', selectedWarga.hubunganKk],
                     ['Peran Dalam KK', selectedWarga.peranKk],
                     ['Gender', selectedWarga.jenisKelamin],
                     ['Tahun Lahir', selectedWarga.tanggalLahir || '-'],
                     ['Umur', `${selectedWarga.usia} Tahun`],
+                    ['Alamat Lengkap (RW 09)', selectedWarga.alamat],
+                    ['RT / RW', `${selectedWarga.rt} / ${selectedWarga.rw}`],
+                  ]
+                : [
+                    ['Nama Warga', selectedWarga.nama],
+                    ['Status Keberadaan / Domisili', domisiliText],
+                    ...(selectedWarga.alamatKtp ? [['Alamat KTP Asal', selectedWarga.alamatKtp]] : []),
+                    ...(selectedWarga.alamatDomisili ? [['Alamat Domisili Riil (Luar)', selectedWarga.alamatDomisili]] : []),
+                    ['Gender', selectedWarga.jenisKelamin],
+                    ['Tahun Lahir', selectedWarga.tanggalLahir || '-'],
+                    ['Umur', `${selectedWarga.usia} Tahun`],
                     ['Alamat Lengkap', selectedWarga.alamat],
                     ['RT / RW', `${selectedWarga.rt} / ${selectedWarga.rw}`],
-                  ].map(([label, value]) => (
+                  ];
+
+              return (
+                <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingBottom: 20 }}>
+                  {/* Status Banner */}
+                  <View style={[styles.modalBanner, isAdmin ? (isKepalaSelected ? styles.modalBannerParent : styles.modalBannerChild) : { backgroundColor: '#00216e' }]}>
+                    <Text style={styles.modalBannerTitle}>
+                      {isAdmin ? (isKepalaSelected ? 'KARTU KELUARGA (PARENT KK)' : `ANGGOTA KELUARGA (${selectedWarga.hubunganKk.toUpperCase()})`) : 'INFORMASI KEPENDUDUKAN WARGA'}
+                    </Text>
+                  </View>
+
+                  {detailRows.map(([label, value]) => (
                     <View key={label} style={styles.detailRow}>
                       <Text style={styles.detailLabel}>{label}</Text>
                       <Text style={styles.detailValue}>{value}</Text>
                     </View>
                   ))}
 
-                  {/* If Selected is Kepala Keluarga: Render Section Anggota Keluarga */}
-                  {isKepalaSelected && (
+                  {/* If Selected is Kepala Keluarga: Render Section Anggota Keluarga - ONLY FOR ADMIN */}
+                  {isAdmin && isKepalaSelected && (
                     <View style={styles.modalKkSection}>
                       <Text style={styles.modalKkTitle}>Daftar Anggota Keluarga (Menginduk KK Ini):</Text>
                       {familyMembers.length === 0 ? (
@@ -708,8 +964,8 @@ const isValidHouseNumber = (no?: string): boolean => {
                     </View>
                   )}
 
-                  {/* If Selected is Anggota Keluarga: Render Section Parent KK */}
-                  {!isKepalaSelected && (
+                  {/* If Selected is Anggota Keluarga: Render Section Parent KK - ONLY FOR ADMIN */}
+                  {isAdmin && !isKepalaSelected && (
                     <View style={styles.modalKkSection}>
                       <Text style={styles.modalKkTitle}>Induk Kepala Keluarga (Parent KK):</Text>
                       {parentKk ? (
@@ -764,8 +1020,60 @@ const isValidHouseNumber = (no?: string): boolean => {
                 onChangeText={t => setFormData(prev => ({ ...prev, nama: t }))}
               />
 
-              {/* 2. Status Keluarga (Radio Button / Dropdown) */}
-              <Text style={styles.inputLabel}>2. Status Keluarga * (Radio Button / Dropdown)</Text>
+              {/* 2. Status Keberadaan / Domisili (Radio Button) */}
+              <Text style={styles.inputLabel}>2. Status Keberadaan / Domisili *</Text>
+              <View style={styles.radioGrid}>
+                {STATUS_DOMISILI_OPTIONS.map(opt => {
+                  const isSelected = (formData.statusDomisili || formData.status) === opt;
+                  return (
+                    <TouchableOpacity
+                      key={opt}
+                      style={[styles.radioItem, isSelected && styles.radioItemActive]}
+                      onPress={() => setFormData(prev => ({ ...prev, statusDomisili: opt, status: opt }))}
+                    >
+                      <View style={[styles.radioCircle, isSelected && styles.radioCircleActive]}>
+                        {isSelected && <View style={styles.radioDot} />}
+                      </View>
+                      <Text style={[styles.radioLabel, isSelected && styles.radioLabelActive]}>{opt}</Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+
+              {/* Field Alamat KTP Asal (jika Kontrak/Kos/KTP Luar) */}
+              {((formData.statusDomisili || '').includes('KTP Luar') || (formData.statusDomisili || '').includes('Kos') || (formData.statusDomisili || '').includes('Kontrak')) && (
+                <View style={{ marginTop: 8, marginBottom: 8 }}>
+                  <Text style={{ fontSize: 11, color: '#00216e', fontWeight: 'bold', marginBottom: 4 }}>
+                    Alamat KTP Asal (Luar Wilayah RW 09):
+                  </Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Contoh: Desa Sukamaju RT 02/03, Majalengka, Jawa Barat"
+                    placeholderTextColor="#999"
+                    value={formData.alamatKtp}
+                    onChangeText={t => setFormData(prev => ({ ...prev, alamatKtp: t }))}
+                  />
+                </View>
+              )}
+
+              {/* Field Alamat Tempat Tinggal Riil (jika KTP Sini tapi Domisili Luar) */}
+              {((formData.statusDomisili || '').includes('Domisili di Luar') || (formData.statusDomisili || '').includes('KTP Sini')) && (
+                <View style={{ marginTop: 8, marginBottom: 8 }}>
+                  <Text style={{ fontSize: 11, color: '#00216e', fontWeight: 'bold', marginBottom: 4 }}>
+                    Alamat Domisili / Tempat Tinggal Riil (Luar Wilayah RW 09):
+                  </Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Contoh: Perumahan Sunter Indah Blok B1 No. 4, Jakarta Utara"
+                    placeholderTextColor="#999"
+                    value={formData.alamatDomisili}
+                    onChangeText={t => setFormData(prev => ({ ...prev, alamatDomisili: t }))}
+                  />
+                </View>
+              )}
+
+              {/* 3. Status Keluarga (Radio Button / Dropdown) */}
+              <Text style={styles.inputLabel}>3. Status Keluarga * (Radio Button / Dropdown)</Text>
               <View style={styles.radioGrid}>
                 {STATUS_KELUARGA_OPTIONS.map(opt => {
                   const isSelected = formData.hubunganKk === opt;
@@ -1106,4 +1414,24 @@ const styles = StyleSheet.create({
   guestNoticeDesc: { fontSize: 13, color: '#475569', lineHeight: 20, marginBottom: 12 },
   guestLoginActionBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', backgroundColor: '#00216e', borderRadius: 12, paddingVertical: 12, gap: 8, marginTop: 8 },
   guestLoginActionText: { color: '#fff', fontSize: 13, fontWeight: 'bold' },
+  verifiedBadge: { backgroundColor: '#e8f5e9', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6, borderWidth: 1, borderColor: '#c8e6c9' },
+  verifiedBadgeText: { fontSize: 10, color: '#2e7d32', fontWeight: 'bold' },
+  searchIconBadge: { width: 44, height: 44, borderRadius: 12, backgroundColor: '#eef2fa', justifyContent: 'center', alignItems: 'center' },
+  guestInstructionBox: { backgroundColor: '#f8fafc', borderRadius: 12, padding: 12, marginVertical: 10, borderWidth: 1, borderColor: '#e2e8f0', gap: 8 },
+  guestInstructionRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  guestInstructionBadge: { backgroundColor: '#e8f5e9', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, fontSize: 11, fontWeight: 'bold', color: '#2e7d32' },
+  guestInstructionBadgeRed: { backgroundColor: '#ffebee', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6, fontSize: 11, fontWeight: 'bold', color: '#c62828' },
+  guestInstructionText: { fontSize: 12, color: '#475569', flex: 1 },
+  guestNotFoundCard: { backgroundColor: '#fff', borderRadius: 16, padding: 20, marginTop: 10, borderWidth: 1, borderColor: '#fee2e2', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 6, elevation: 3 },
+  guestNotFoundHeader: { flexDirection: 'row', alignItems: 'center', gap: 12, marginBottom: 14, paddingBottom: 14, borderBottomWidth: 1, borderBottomColor: '#fef2f2' },
+  guestNotFoundTitle: { fontSize: 16, fontWeight: 'bold', color: '#991b1b' },
+  guestNotFoundSub: { fontSize: 12, color: '#7f1d1d', marginTop: 2 },
+  guestNotFoundDesc: { fontSize: 13, color: '#475569', lineHeight: 20, marginBottom: 14 },
+  guestTipsBox: { backgroundColor: '#fff5f5', borderRadius: 12, padding: 12, marginBottom: 16, borderWidth: 1, borderColor: '#fed7d7' },
+  guestTipsTitle: { fontSize: 12, fontWeight: 'bold', color: '#991b1b', marginBottom: 6 },
+  guestTipItem: { fontSize: 12, color: '#7f1d1d', lineHeight: 18, marginBottom: 4 },
+  resetSearchBtn: { backgroundColor: '#00216e', borderRadius: 12, paddingVertical: 12, alignItems: 'center' },
+  resetSearchBtnText: { color: '#fff', fontSize: 13, fontWeight: 'bold' },
+  domisiliBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6, borderWidth: 1 },
+  domisiliBadgeText: { fontSize: 10, fontWeight: 'bold' },
 });

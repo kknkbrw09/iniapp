@@ -57,7 +57,7 @@ export default function SplashScreen({ onFinish }: SplashScreenProps) {
         <View style={styles.divider} />
 
         <View style={styles.badgeWrap}>
-          <Text style={styles.badgeText}>Versi 1.0.0</Text>
+          <Text style={styles.badgeText}>Versi 1.2.3</Text>
         </View>
 
         <View style={styles.loaderWrap}>

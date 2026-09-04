@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -12,6 +12,7 @@ import {
   Platform,
   TouchableWithoutFeedback,
   Keyboard,
+  ScrollView,
 } from 'react-native';
 import Svg, { Path, Circle, Line } from 'react-native-svg';
 import { useAuth } from '../context/AuthContext';
@@ -45,6 +46,7 @@ export default function LoginModal({ visible, onClose }: LoginModalProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
+  const passwordInputRef = useRef<TextInput>(null);
 
   const handleAdminLogin = async () => {
     if (!username || !password) {
@@ -74,93 +76,103 @@ export default function LoginModal({ visible, onClose }: LoginModalProps) {
   return (
     <Modal
       visible={visible}
-      animationType="slide"
+      animationType="fade"
       transparent
       onRequestClose={onClose}
     >
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
         <View style={styles.overlay}>
           <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
             style={styles.keyboardAvoidingContainer}
           >
             <TouchableWithoutFeedback onPress={() => {}}>
-              <View style={styles.modalBox}>
-                <View style={styles.sheetHandle} />
-
-                <View style={styles.header}>
-                  <View style={styles.titleRow}>
-                    <View style={styles.iconBadge}>
-                      <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
-                        <Path
-                          d="M3 10L12 3L21 10V20C21 20.55 20.55 21 20 21H4C3.45 21 3 20.55 3 20V10Z"
-                          stroke="#fff"
-                          strokeWidth="2"
-                          strokeLinejoin="round"
-                        />
-                        <Circle cx="12" cy="8" r="1.5" fill="#fff" />
-                      </Svg>
+              <View style={styles.glassCard}>
+                <ScrollView
+                  keyboardShouldPersistTaps="handled"
+                  showsVerticalScrollIndicator={false}
+                  bounces={false}
+                >
+                  <View style={styles.header}>
+                    <View style={styles.titleRow}>
+                      <View style={styles.iconBadge}>
+                        <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
+                          <Path
+                            d="M3 10L12 3L21 10V20C21 20.55 20.55 21 20 21H4C3.45 21 3 20.55 3 20V10Z"
+                            stroke="#fff"
+                            strokeWidth="2"
+                            strokeLinejoin="round"
+                          />
+                          <Circle cx="12" cy="8" r="1.5" fill="#fff" />
+                        </Svg>
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.title}>Login Pengurus / Admin</Text>
+                        <Text style={styles.subtitle}>Masuk untuk mengelola data RW 09</Text>
+                      </View>
                     </View>
-                    <View>
-                      <Text style={styles.title}>Login Pengurus / Admin</Text>
-                      <Text style={styles.subtitle}>Masuk untuk mengelola data warga</Text>
-                    </View>
-                  </View>
-                  <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
-                    <Text style={styles.closeText}>✕</Text>
-                  </TouchableOpacity>
-                </View>
-
-                <View style={styles.form}>
-                  <Text style={styles.label}>USERNAME ADMIN</Text>
-                  <TextInput
-                    style={styles.input}
-                    placeholder="Masukkan username admin (cth: admin / admin_rt01)"
-                    placeholderTextColor="#999"
-                    value={username}
-                    onChangeText={setUsername}
-                    autoCapitalize="none"
-                  />
-
-                  <Text style={styles.label}>PASSWORD ADMIN</Text>
-                  <View style={styles.passwordContainer}>
-                    <TextInput
-                      style={styles.passwordInput}
-                      placeholder="Masukkan password admin"
-                      placeholderTextColor="#999"
-                      value={password}
-                      onChangeText={setPassword}
-                      secureTextEntry={!showPassword}
-                    />
-                    <TouchableOpacity
-                      style={styles.eyeBtn}
-                      onPress={() => setShowPassword(!showPassword)}
-                      activeOpacity={0.7}
-                      hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                    >
-                      <EyeIcon visible={showPassword} color="#666" size={20} />
+                    <TouchableOpacity onPress={onClose} style={styles.closeBtn}>
+                      <Text style={styles.closeText}>✕</Text>
                     </TouchableOpacity>
                   </View>
 
-                  <TouchableOpacity
-                    style={[styles.submitBtn, loading && { opacity: 0.7 }]}
-                    onPress={handleAdminLogin}
-                    disabled={loading}
-                  >
-                    {loading ? (
-                      <ActivityIndicator color="#fff" />
-                    ) : (
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                        <LockIcon color="#fff" size={18} />
-                        <Text style={styles.submitText}>Masuk Sebagai Admin</Text>
-                      </View>
-                    )}
-                  </TouchableOpacity>
+                  <View style={styles.form}>
+                    <Text style={styles.label}>USERNAME ADMIN / KADER</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Contoh: admin / admin_rt01 / dasawisma"
+                      placeholderTextColor="#94a3b8"
+                      value={username}
+                      onChangeText={setUsername}
+                      autoCapitalize="none"
+                      returnKeyType="next"
+                      onSubmitEditing={() => passwordInputRef.current?.focus()}
+                      blurOnSubmit={false}
+                    />
 
-                  <TouchableOpacity style={styles.cancelBtn} onPress={onClose}>
-                    <Text style={styles.cancelText}>Batal</Text>
-                  </TouchableOpacity>
-                </View>
+                    <Text style={styles.label}>PASSWORD</Text>
+                    <View style={styles.passwordContainer}>
+                      <TextInput
+                        ref={passwordInputRef}
+                        style={styles.passwordInput}
+                        placeholder="Masukkan password akun Anda"
+                        placeholderTextColor="#94a3b8"
+                        value={password}
+                        onChangeText={setPassword}
+                        secureTextEntry={!showPassword}
+                        returnKeyType="done"
+                        onSubmitEditing={handleAdminLogin}
+                      />
+                      <TouchableOpacity
+                        style={styles.eyeBtn}
+                        onPress={() => setShowPassword(!showPassword)}
+                        activeOpacity={0.7}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                      >
+                        <EyeIcon visible={showPassword} color="#64748b" size={20} />
+                      </TouchableOpacity>
+                    </View>
+
+                    <TouchableOpacity
+                      style={[styles.submitBtn, loading && { opacity: 0.7 }]}
+                      onPress={handleAdminLogin}
+                      disabled={loading}
+                    >
+                      {loading ? (
+                        <ActivityIndicator color="#fff" />
+                      ) : (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                          <LockIcon color="#fff" size={18} />
+                          <Text style={styles.submitText}>Masuk Ke Aplikasi</Text>
+                        </View>
+                      )}
+                    </TouchableOpacity>
+
+                    <TouchableOpacity style={styles.cancelBtn} onPress={onClose}>
+                      <Text style={styles.cancelText}>Batal</Text>
+                    </TouchableOpacity>
+                  </View>
+                </ScrollView>
               </View>
             </TouchableWithoutFeedback>
           </KeyboardAvoidingView>
@@ -173,46 +185,48 @@ export default function LoginModal({ visible, onClose }: LoginModalProps) {
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(15, 23, 42, 0.72)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
   },
   keyboardAvoidingContainer: {
     width: '100%',
-    justifyContent: 'flex-end',
+    maxWidth: 400,
+    alignItems: 'center',
   },
-  modalBox: {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 20,
-    paddingBottom: Platform.OS === 'ios' ? 40 : 30,
-  },
-  sheetHandle: {
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#ddd',
-    alignSelf: 'center',
-    marginBottom: 15,
+  glassCard: {
+    width: '100%',
+    backgroundColor: 'rgba(255, 255, 255, 0.94)',
+    borderRadius: 24,
+    padding: 24,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.8)',
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.3,
+    shadowRadius: 28,
+    elevation: 14,
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 16,
-    paddingBottom: 12,
+    paddingBottom: 14,
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    borderBottomColor: '#f1f5f9',
   },
   titleRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 12,
+    flex: 1,
   },
   iconBadge: {
-    width: 38,
-    height: 38,
-    borderRadius: 10,
+    width: 40,
+    height: 40,
+    borderRadius: 12,
     backgroundColor: '#00216e',
     justifyContent: 'center',
     alignItems: 'center',
@@ -224,63 +238,76 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     fontSize: 11,
-    color: '#666',
+    color: '#64748b',
+    marginTop: 1,
   },
   closeBtn: {
     padding: 6,
   },
   closeText: {
-    fontSize: 20,
-    color: '#999',
+    fontSize: 18,
+    color: '#94a3b8',
+    fontWeight: 'bold',
   },
   form: {
-    marginTop: 4,
+    marginTop: 2,
   },
   label: {
     fontSize: 10,
     fontWeight: 'bold',
-    color: '#444653',
+    color: '#00216e',
     letterSpacing: 1,
     marginBottom: 6,
-    marginTop: 10,
+    marginTop: 14,
+    textAlign: 'left',
   },
   input: {
-    backgroundColor: '#f5f5f5',
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-    borderRadius: 10,
+    backgroundColor: '#f8fafc',
+    borderWidth: 1.5,
+    borderColor: '#cbd5e1',
+    borderRadius: 14,
     paddingHorizontal: 14,
-    paddingVertical: 11,
+    paddingVertical: 12,
     fontSize: 14,
-    color: '#333',
+    color: '#00216e',
+    textAlign: 'left',
+    fontWeight: '600',
   },
   passwordContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f5f5f5',
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-    borderRadius: 10,
+    backgroundColor: '#f8fafc',
+    borderWidth: 1.5,
+    borderColor: '#cbd5e1',
+    borderRadius: 14,
+    paddingRight: 6,
   },
   passwordInput: {
     flex: 1,
     paddingHorizontal: 14,
-    paddingVertical: 11,
+    paddingVertical: 12,
     fontSize: 14,
-    color: '#333',
+    color: '#00216e',
+    textAlign: 'left',
+    fontWeight: '600',
   },
   eyeBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 11,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
     justifyContent: 'center',
     alignItems: 'center',
   },
   submitBtn: {
     backgroundColor: '#00216e',
-    borderRadius: 12,
+    borderRadius: 14,
     paddingVertical: 14,
     alignItems: 'center',
-    marginTop: 20,
+    marginTop: 22,
+    shadowColor: '#00216e',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
   },
   submitText: {
     color: '#fff',
@@ -290,11 +317,12 @@ const styles = StyleSheet.create({
   cancelBtn: {
     paddingVertical: 12,
     alignItems: 'center',
-    marginTop: 6,
+    marginTop: 4,
   },
   cancelText: {
-    color: '#666',
+    color: '#64748b',
     fontSize: 13,
+    fontWeight: '500',
   },
 });
 

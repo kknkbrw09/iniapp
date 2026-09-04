@@ -8,7 +8,10 @@ export interface Warga {
   alamat: string;
   rt: string;
   rw: string;
-  status: 'Tetap' | 'Kontrak';
+  status: string;
+  statusDomisili?: string;
+  alamatKtp?: string;
+  alamatDomisili?: string;
   jenisKelamin: 'Laki-laki' | 'Perempuan';
   usia: number;
   tanggalLahir?: string;
@@ -28,6 +31,7 @@ export interface TransaksiKeuangan {
   jumlah: number;
   kategori: string;
   deskripsi?: string;
+  rt?: string;
 }
 
 export interface Kegiatan {
@@ -48,6 +52,7 @@ export interface Iuran {
   tahun: number;
   status: 'Lunas' | 'Belum';
   jumlah: number;
+  jenisIuran?: string;
 }
 
 export interface SuratPengantar {
@@ -75,6 +80,13 @@ export interface AdminUser {
   id: string;
   username: string;
   nama_admin: string;
+  rt?: string | null;
 }
 
-export type UserRole = 'admin' | 'guest';
+export type RtRole =
+  | 'rt001' | 'rt002' | 'rt003' | 'rt004' | 'rt005' | 'rt006'
+  | 'rt007' | 'rt008' | 'rt009' | 'rt010' | 'rt011' | 'rt012'
+  | 'rt013' | 'rt014' | 'rt015' | 'rt016' | 'rt017' | 'rt018';
+
+export type UserRole = 'admin' | RtRole | 'dasa_wisma' | 'guest';
+

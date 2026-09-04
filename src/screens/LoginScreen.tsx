@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,9 @@ import {
   Platform,
   ActivityIndicator,
   Alert,
+  ScrollView,
+  TouchableWithoutFeedback,
+  Keyboard,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Circle } from 'react-native-svg';
@@ -19,6 +22,7 @@ export default function LoginScreen() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const { login, loginAsGuest } = useAuth();
+  const passwordInputRef = useRef<TextInput>(null);
 
   const handleAdminLogin = async () => {
     if (!username || !password) {
@@ -54,64 +58,78 @@ export default function LoginScreen() {
       </View>
 
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        style={styles.formContainer}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={{ flex: 1 }}
       >
-        <View style={styles.logoContainer}>
-          <View style={styles.logo}>
-            <Svg width={42} height={42} viewBox="0 0 24 24" fill="none">
-              <Path d="M3 10L12 3L21 10V20C21 20.55 20.55 21 20 21H4C3.45 21 3 20.55 3 20V10Z" stroke="#fff" strokeWidth="2" strokeLinejoin="round" />
-              <Path d="M9 21V12H15V21" stroke="#fff" strokeWidth="2" strokeLinejoin="round" />
-              <Circle cx="12" cy="8" r="1.5" fill="#fff" />
-            </Svg>
-          </View>
-          <Text style={styles.title}>Portal RW 09</Text>
-          <Text style={styles.subtitle}>Kebon Bawang, Jakarta Utara</Text>
-        </View>
-
-        <View style={styles.card}>
-          <Text style={styles.label}>USERNAME</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Masukkan username admin"
-            placeholderTextColor="#999"
-            value={username}
-            onChangeText={setUsername}
-            autoCapitalize="none"
-          />
-
-          <Text style={styles.label}>PASSWORD</Text>
-          <TextInput
-            style={styles.input}
-            placeholder="Masukkan password admin"
-            placeholderTextColor="#999"
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-          />
-
-          <TouchableOpacity
-            style={styles.loginButton}
-            onPress={handleAdminLogin}
-            disabled={loading}
+        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+          <ScrollView
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
           >
-            {loading ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.loginButtonText}>Masuk sebagai Admin</Text>
-            )}
-          </TouchableOpacity>
+            <View style={styles.logoContainer}>
+              <View style={styles.logo}>
+                <Svg width={42} height={42} viewBox="0 0 24 24" fill="none">
+                  <Path d="M3 10L12 3L21 10V20C21 20.55 20.55 21 20 21H4C3.45 21 3 20.55 3 20V10Z" stroke="#fff" strokeWidth="2" strokeLinejoin="round" />
+                  <Path d="M9 21V12H15V21" stroke="#fff" strokeWidth="2" strokeLinejoin="round" />
+                  <Circle cx="12" cy="8" r="1.5" fill="#fff" />
+                </Svg>
+              </View>
+              <Text style={styles.title}>Portal RW 09</Text>
+              <Text style={styles.subtitle}>Kebon Bawang, Jakarta Utara</Text>
+            </View>
 
-          <View style={styles.divider}>
-            <View style={styles.dividerLine} />
-            <Text style={styles.dividerText}>atau</Text>
-            <View style={styles.dividerLine} />
-          </View>
+            <View style={styles.card}>
+              <Text style={styles.label}>USERNAME</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Masukkan username admin"
+                placeholderTextColor="#999"
+                value={username}
+                onChangeText={setUsername}
+                autoCapitalize="none"
+                returnKeyType="next"
+                onSubmitEditing={() => passwordInputRef.current?.focus()}
+                blurOnSubmit={false}
+              />
 
-          <TouchableOpacity style={styles.guestButton} onPress={handleGuestLogin}>
-            <Text style={styles.guestButtonText}>Masuk sebagai Tamu</Text>
-          </TouchableOpacity>
-        </View>
+              <Text style={styles.label}>PASSWORD</Text>
+              <TextInput
+                ref={passwordInputRef}
+                style={styles.input}
+                placeholder="Masukkan password admin"
+                placeholderTextColor="#999"
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry
+                returnKeyType="done"
+                onSubmitEditing={handleAdminLogin}
+              />
+
+              <TouchableOpacity
+                style={styles.loginButton}
+                onPress={handleAdminLogin}
+                disabled={loading}
+              >
+                {loading ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.loginButtonText}>Masuk sebagai Admin</Text>
+                )}
+              </TouchableOpacity>
+
+              <View style={styles.divider}>
+                <View style={styles.dividerLine} />
+                <Text style={styles.dividerText}>atau</Text>
+                <View style={styles.dividerLine} />
+              </View>
+
+              <TouchableOpacity style={styles.guestButton} onPress={handleGuestLogin}>
+                <Text style={styles.guestButtonText}>Masuk sebagai Tamu</Text>
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
+        </TouchableWithoutFeedback>
       </KeyboardAvoidingView>
     </LinearGradient>
   );
@@ -120,6 +138,12 @@ export default function LoginScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 40,
   },
   backgroundShapes: {
     position: 'absolute',
@@ -183,39 +207,49 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   card: {
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
-    borderRadius: 20,
-    padding: 30,
+    backgroundColor: 'rgba(255, 255, 255, 0.92)',
+    borderRadius: 24,
+    padding: 26,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.75)',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.3,
-    shadowRadius: 20,
-    elevation: 10,
+    shadowOffset: { width: 0, height: 14 },
+    shadowOpacity: 0.28,
+    shadowRadius: 24,
+    elevation: 12,
   },
   label: {
     fontSize: 11,
     fontWeight: 'bold',
-    color: '#444653',
+    color: '#00216e',
     letterSpacing: 1.5,
     marginBottom: 8,
+    textAlign: 'center',
   },
   input: {
-    backgroundColor: '#f5f5f5',
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 12,
-    paddingHorizontal: 15,
-    paddingVertical: 12,
+    backgroundColor: '#f8fafc',
+    borderWidth: 1.5,
+    borderColor: '#cbd5e1',
+    borderRadius: 14,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
     fontSize: 14,
-    marginBottom: 20,
-    color: '#333',
+    marginBottom: 18,
+    color: '#00216e',
+    textAlign: 'center',
+    fontWeight: '600',
   },
   loginButton: {
     backgroundColor: '#00216e',
-    borderRadius: 12,
+    borderRadius: 14,
     paddingVertical: 15,
     alignItems: 'center',
-    marginTop: 10,
+    marginTop: 8,
+    shadowColor: '#00216e',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
   },
   loginButtonText: {
     color: '#fff',
@@ -225,25 +259,25 @@ const styles = StyleSheet.create({
   divider: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginVertical: 25,
+    marginVertical: 22,
   },
   dividerLine: {
     flex: 1,
     height: 1,
-    backgroundColor: '#ddd',
+    backgroundColor: '#cbd5e1',
   },
   dividerText: {
     marginHorizontal: 15,
-    color: '#999',
+    color: '#64748b',
     fontSize: 12,
     fontWeight: 'bold',
   },
   guestButton: {
-    backgroundColor: '#f5f5f5',
-    borderWidth: 1,
-    borderColor: '#ddd',
-    borderRadius: 12,
-    paddingVertical: 15,
+    backgroundColor: '#f1f5f9',
+    borderWidth: 1.5,
+    borderColor: '#cbd5e1',
+    borderRadius: 14,
+    paddingVertical: 14,
     alignItems: 'center',
   },
   guestButtonText: {

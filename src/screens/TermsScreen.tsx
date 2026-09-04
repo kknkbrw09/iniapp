@@ -2,10 +2,12 @@ import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, SafeAreaView, ActivityIndicator, Animated } from 'react-native';
 
 interface TermsScreenProps {
-  onAgree: () => void;
+  onAgree?: () => void;
+  isModal?: boolean;
+  onClose?: () => void;
 }
 
-export default function TermsScreen({ onAgree }: TermsScreenProps) {
+export default function TermsScreen({ onAgree, isModal, onClose }: TermsScreenProps) {
   const [agreed, setAgreed] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -28,14 +30,15 @@ export default function TermsScreen({ onAgree }: TermsScreenProps) {
   }, [fadeAnim, slideAnim]);
 
   const handleConfirm = () => {
-    if (!agreed) return;
+    if (!agreed && !isModal) return;
     setLoading(true);
     Animated.timing(fadeAnim, {
       toValue: 0,
       duration: 300,
       useNativeDriver: true,
     }).start(() => {
-      onAgree();
+      if (onAgree) onAgree();
+      if (onClose) onClose();
     });
   };
 
@@ -43,11 +46,18 @@ export default function TermsScreen({ onAgree }: TermsScreenProps) {
     <SafeAreaView style={styles.container}>
       <Animated.View style={{ flex: 1, opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
       <View style={styles.header}>
-        <View style={styles.logoBadge}>
-          <Text style={styles.logoBadgeText}>RW 09</Text>
+        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+          <View style={styles.logoBadge}>
+            <Text style={styles.logoBadgeText}>RW 09</Text>
+          </View>
+          {isModal && onClose && (
+            <TouchableOpacity onPress={onClose} style={{ padding: 6 }}>
+              <Text style={{ fontSize: 20, color: '#999', fontWeight: 'bold' }}>✕</Text>
+            </TouchableOpacity>
+          )}
         </View>
         <Text style={styles.title}>Syarat & Ketentuan</Text>
-        <Text style={styles.subtitle}>Penggunaan Aplikasi Kebazeni RW 09 • Versi 1.0.0</Text>
+        <Text style={styles.subtitle}>Penggunaan Aplikasi Kebazeni RW 09 • Versi 1.2.3</Text>
       </View>
 
       <ScrollView style={styles.contentScroll} contentContainerStyle={{ paddingBottom: 20 }} showsVerticalScrollIndicator={false}>
@@ -72,33 +82,41 @@ export default function TermsScreen({ onAgree }: TermsScreenProps) {
 
           <Text style={styles.sectionTitle}>4. Pembaharuan Versi & Informasi</Text>
           <Text style={styles.paragraph}>
-            Versi aplikasi saat ini adalah <Text style={styles.bold}>v1.0.0 (Build 2026.08)</Text>. Pengurus RW 09 berhak memperbarui fitur aplikasi demi meningkatkan keamanan dan kemudahan layanan warga.
+            Versi aplikasi saat ini adalah <Text style={styles.bold}>v1.2.3 (Build 2026.09)</Text>. Pengurus RW 09 berhak memperbarui fitur aplikasi demi meningkatkan keamanan dan kemudahan layanan warga.
           </Text>
         </View>
       </ScrollView>
 
       {/* Footer Consent Section */}
       <View style={styles.footer}>
-        <TouchableOpacity style={styles.checkboxRow} onPress={() => setAgreed(!agreed)}>
-          <View style={[styles.checkbox, agreed && styles.checkboxActive]}>
-            {agreed && <Text style={styles.checkmark}>✓</Text>}
-          </View>
-          <Text style={styles.checkboxLabel}>
-            Saya telah membaca dan menyetujui <Text style={styles.bold}>Syarat & Ketentuan</Text> aplikasi Kebazeni RW 09.
-          </Text>
-        </TouchableOpacity>
+        {!isModal ? (
+          <>
+            <TouchableOpacity style={styles.checkboxRow} onPress={() => setAgreed(!agreed)}>
+              <View style={[styles.checkbox, agreed && styles.checkboxActive]}>
+                {agreed && <Text style={styles.checkmark}>✓</Text>}
+              </View>
+              <Text style={styles.checkboxLabel}>
+                Saya telah membaca dan menyetujui <Text style={styles.bold}>Syarat & Ketentuan</Text> aplikasi Kebazeni RW 09.
+              </Text>
+            </TouchableOpacity>
 
-        <TouchableOpacity
-          style={[styles.agreeBtn, !agreed && styles.agreeBtnDisabled]}
-          onPress={handleConfirm}
-          disabled={!agreed || loading}
-        >
-          {loading ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.agreeBtnText}>Setuju & Lanjutkan</Text>
-          )}
-        </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.agreeBtn, !agreed && styles.agreeBtnDisabled]}
+              onPress={handleConfirm}
+              disabled={!agreed || loading}
+            >
+              {loading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.agreeBtnText}>Setuju & Lanjutkan</Text>
+              )}
+            </TouchableOpacity>
+          </>
+        ) : (
+          <TouchableOpacity style={styles.agreeBtn} onPress={onClose}>
+            <Text style={styles.agreeBtnText}>Tutup</Text>
+          </TouchableOpacity>
+        )}
       </View>
     </Animated.View>
   </SafeAreaView>

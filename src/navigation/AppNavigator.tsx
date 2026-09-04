@@ -3,6 +3,7 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { View, StyleSheet } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as SplashScreenNative from 'expo-splash-screen';
 import { SafeStorage } from '../utils/storage';
 import { useAuth } from '../context/AuthContext';
@@ -30,14 +31,24 @@ function DummyScreen() {
 }
 
 function MainTabs({ onOpenDrawer }: { onOpenDrawer: () => void }) {
+  const insets = useSafeAreaInsets();
+  const bottomInset = Math.max(insets.bottom, 0);
+
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
         tabBarIcon: ({ color }) => renderTabIcon(route.name, color),
         tabBarActiveTintColor: '#00216e',
         tabBarInactiveTintColor: '#999',
-        tabBarStyle: { paddingBottom: 5, paddingTop: 5, height: 60 },
-        tabBarLabelStyle: { fontSize: 10, fontWeight: '600' },
+        tabBarStyle: {
+          backgroundColor: '#ffffff',
+          borderTopWidth: 1,
+          borderTopColor: '#f0f0f0',
+          paddingTop: 6,
+          paddingBottom: Math.max(bottomInset, 6),
+          height: 60 + bottomInset,
+        },
+        tabBarLabelStyle: { fontSize: 10, fontWeight: '600', marginBottom: bottomInset > 0 ? 2 : 4 },
         headerShown: false,
       })}
     >
@@ -109,16 +120,12 @@ export default function AppNavigator() {
     }
   }, [isLoading, hasAgreedTerms]);
 
-  if (showSplash) {
+  if (showSplash || isLoading || hasAgreedTerms === null) {
     return <SplashScreen onFinish={() => setShowSplash(false)} />;
   }
 
   if (hasAgreedTerms === false) {
     return <TermsScreen onAgree={handleAgreeTerms} />;
-  }
-
-  if (isLoading || hasAgreedTerms === null) {
-    return null;
   }
 
   return (

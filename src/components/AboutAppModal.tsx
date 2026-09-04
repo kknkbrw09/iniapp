@@ -38,7 +38,7 @@ export default function AboutAppModal({ visible, onClose, onOpenTerms }: AboutAp
               <Text style={styles.brandTitle}>KEBAZENI</Text>
               <Text style={styles.brandSub}>Sistem Informasi Digital RW 09</Text>
               <View style={styles.versionChip}>
-                <Text style={styles.versionChipText}>Versi 1.0.0 (Build 2026.08)</Text>
+                <Text style={styles.versionChipText}>Versi 1.2.3 (Build 2026.09)</Text>
               </View>
             </View>
 
@@ -53,7 +53,7 @@ export default function AboutAppModal({ visible, onClose, onOpenTerms }: AboutAp
             <View style={styles.infoTable}>
               {[
                 ['Nama Aplikasi', 'KEBAZENI'],
-                ['Versi Rilis', 'v1.0.0'],
+                ['Versi Rilis', 'v1.2.3'],
                 ['Pengembang', 'Pengurus RW 09 & Tim KKN'],
                 ['Peruntukan', 'Layanan Lingkungan RW 09'],
                 ['Status Layanan', 'Aktif & Terintegrasi'],

@@ -1,6 +1,6 @@
 {
   "name": "kebazeni",
-  "version": "1.0.0",
+  "version": "1.2.3",
   "main": "index.ts",
   "dependencies": {
     "@expo/metro-runtime": "~57.0.9",
@@ -42,7 +42,7 @@
     "android:usb": "adb reverse tcp:8081 tcp:8081 && expo start --host localhost --android",
     "android:tailscale": "npx cross-env REACT_NATIVE_PACKAGER_HOSTNAME=100.126.15.30 expo start --clear",
     "android:tunnel": "expo start --tunnel --android",
-    "ios": "expo start --ios",
+    "ios": "expo run:ios",
     "web": "expo start --web",
     "login": "eas login",
     "logout": "eas logout",

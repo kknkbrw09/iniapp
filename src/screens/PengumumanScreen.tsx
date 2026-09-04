@@ -9,17 +9,41 @@ import { supabase, isSupabaseConfigured } from '../lib/supabase';
 import { useAuth } from '../context/AuthContext';
 import { CardListSkeleton } from '../components/SkeletonLoader';
 import { logger } from '../utils/logger';
+import { PengumumanIcon } from '../components/TabIcons';
 
-const EMPTY_FORM = { judul: '', tanggal: '', isi: '', penting: false, kategori: 'Informasi' };
+const LIST_RT = Array.from({ length: 18 }, (_, i) => `RT ${String(i + 1).padStart(3, '0')}`);
+
+const isRtMatch = (itemRt?: string, targetRt?: string) => {
+  if (!targetRt || targetRt.toLowerCase() === 'semua') return true;
+  if (!itemRt) return false;
+  const num1 = itemRt.replace(/\D/g, '');
+  const num2 = targetRt.replace(/\D/g, '');
+  if (num1 && num2) {
+    return parseInt(num1, 10) === parseInt(num2, 10);
+  }
+  return itemRt.toLowerCase().trim() === targetRt.toLowerCase().trim();
+};
+
+const EMPTY_FORM = { judul: '', tanggal: '', isi: '', penting: false, kategori: 'Informasi', rt: 'Semua RT' };
 
 export default function PengumumanScreen() {
-  const { role } = useAuth();
-  const isAdmin = role === 'admin';
-  const [list, setList] = useState<Pengumuman[]>([]);
+  const { userRt, guestRt, isRwAdmin, isRtAdmin, isAdmin } = useAuth();
+  const [list, setList] = useState<(Pengumuman & { rt?: string })[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalVisible, setModalVisible] = useState(false);
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
+  const [selectedRt, setSelectedRt] = useState<string>('semua');
+
+  const activeRt = userRt || guestRt;
+  const isRtScoped = !!activeRt && !isRwAdmin;
+
+  useEffect(() => {
+    if (isRtScoped && activeRt) {
+      setSelectedRt(activeRt);
+      setForm(prev => ({ ...prev, rt: activeRt }));
+    }
+  }, [isRtScoped, activeRt]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -28,7 +52,15 @@ export default function PengumumanScreen() {
       const { data, error } = await supabase.from('pengumuman').select('*').order('created_at', { ascending: false });
       if (data && !error) {
         logger.addLog('SUCCESS', 'HTTP 200 OK — GET /pengumuman', `Loaded ${data.length} records`);
-        const mapped = data.map((d: any) => ({ id: d.id, judul: d.judul, tanggal: d.tanggal, isi: d.isi, penting: d.penting, kategori: d.kategori }));
+        const mapped = data.map((d: any) => ({
+          id: d.id,
+          judul: d.judul,
+          tanggal: d.tanggal,
+          isi: d.isi,
+          penting: d.penting,
+          kategori: d.kategori,
+          rt: d.rt || 'Semua RT',
+        }));
         setList(mapped);
       }
     } catch (e) {
@@ -48,34 +80,68 @@ export default function PengumumanScreen() {
       const months = ['Jan','Feb','Mar','Apr','Mei','Jun','Jul','Agu','Sep','Okt','Nov','Des'];
       const dateStr = `${today.getDate()} ${months[today.getMonth()]} ${today.getFullYear()}`;
       const penting = form.kategori === 'Penting';
+      const targetRt = isRtScoped && activeRt ? activeRt : (form.rt || 'Semua RT');
 
       if (isSupabaseConfigured) {
-        const { error } = await supabase.from('pengumuman').insert({ judul: form.judul, tanggal: dateStr, isi: form.isi, penting, kategori: form.kategori });
+        const { error } = await supabase.from('pengumuman').insert({
+          judul: form.judul,
+          tanggal: dateStr,
+          isi: form.isi,
+          penting,
+          kategori: form.kategori,
+          rt: targetRt
+        });
         if (error) throw error;
       }
 
-      setList(prev => [{ id: Date.now().toString(), judul: form.judul, tanggal: dateStr, isi: form.isi, penting, kategori: form.kategori }, ...prev]);
+      setList(prev => [{ id: Date.now().toString(), judul: form.judul, tanggal: dateStr, isi: form.isi, penting, kategori: form.kategori, rt: targetRt }, ...prev]);
       setModalVisible(false);
       setForm(EMPTY_FORM);
     } catch (e: any) { Alert.alert('Error', e.message || 'Gagal menyimpan'); }
     finally { setSaving(false); }
   };
 
-  const renderItem = ({ item }: { item: Pengumuman }) => (
+  const scopedList = list.filter(p => {
+    const itemRt = (p.rt || 'Semua RT').trim();
+    if (isRtScoped && activeRt) {
+      return (
+        itemRt.toLowerCase() === 'semua rt' ||
+        itemRt.toLowerCase() === 'semua' ||
+        itemRt.toLowerCase() === 'rw 09' ||
+        isRtMatch(itemRt, activeRt)
+      );
+    }
+    if (selectedRt === 'semua') return true;
+    return (
+      itemRt.toLowerCase() === 'semua rt' ||
+      itemRt.toLowerCase() === 'semua' ||
+      itemRt.toLowerCase() === 'rw 09' ||
+      isRtMatch(itemRt, selectedRt)
+    );
+  });
+
+  const renderItem = ({ item }: { item: Pengumuman & { rt?: string } }) => (
     <View style={styles.card}>
       {item.penting && <View style={[styles.cardAccentBar, { backgroundColor: '#bb0013' }]} />}
       <View style={styles.cardTop}>
         <View style={[styles.iconWrap, { backgroundColor: item.penting ? '#ffebee' : '#e3f2fd' }]}>
-          <Text style={styles.icon}>📢</Text>
+          <PengumumanIcon color={item.penting ? '#bb0013' : '#00216e'} size={18} />
         </View>
         <View style={styles.cardMeta}>
           <View style={styles.titleRow}>
             <Text style={styles.cardTitle} numberOfLines={2}>{item.judul}</Text>
-            <View style={[styles.badge, { backgroundColor: item.penting ? '#ffebee' : '#e3f2fd' }]}>
-              <Text style={[styles.badgeText, { color: item.penting ? '#bb0013' : '#00216e' }]}>{item.kategori}</Text>
+            <View style={{ flexDirection: 'row', gap: 4 }}>
+              {item.rt ? (
+                <View style={[styles.badge, { backgroundColor: '#e0f2fe' }]}>
+                  <Text style={[styles.badgeText, { color: '#0369a1' }]}>{item.rt}</Text>
+                </View>
+              ) : null}
+              <View style={[styles.badge, { backgroundColor: item.penting ? '#ffebee' : '#e3f2fd' }]}>
+                <Text style={[styles.badgeText, { color: item.penting ? '#bb0013' : '#00216e' }]}>{item.kategori}</Text>
+              </View>
             </View>
           </View>
-          <Text style={styles.cardDate}>📅 {item.tanggal}</Text>
+          <Text style={styles.cardDate}>{item.tanggal}</Text>
         </View>
       </View>
       <Text style={styles.cardIsi}>{item.isi}</Text>
@@ -83,9 +149,9 @@ export default function PengumumanScreen() {
   );
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <View style={styles.header}>
-        <Text style={styles.title}>Pengumuman RW 09</Text>
+        <Text style={styles.title}>{activeRt ? `Pengumuman (${activeRt} & RW)` : 'Pengumuman RW 09'}</Text>
         {isAdmin && (
           <TouchableOpacity style={styles.addBtn} onPress={() => setModalVisible(true)}>
             <Text style={styles.addBtnText}>+ Buat</Text>
@@ -93,13 +159,52 @@ export default function PengumumanScreen() {
         )}
       </View>
 
+      {/* Filter RT Chips */}
+      <View style={{ marginBottom: 12 }}>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 20 }}>
+          {isRtScoped && activeRt ? (
+            <View style={{ paddingHorizontal: 14, paddingVertical: 6, borderRadius: 16, backgroundColor: '#00216e' }}>
+              <Text style={{ fontSize: 12, color: '#fff', fontWeight: 'bold' }}>{activeRt} {isAdmin ? '(Pengurus RT)' : '(Wilayah Anda)'} & Pengumuman RW</Text>
+            </View>
+          ) : (
+            <>
+              <TouchableOpacity
+                style={[
+                  { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 16, backgroundColor: '#eee', marginRight: 8 },
+                  selectedRt === 'semua' && { backgroundColor: '#00216e' }
+                ]}
+                onPress={() => setSelectedRt('semua')}
+              >
+                <Text style={[{ fontSize: 12, color: '#444', fontWeight: 'bold' }, selectedRt === 'semua' && { color: '#fff' }]}>
+                  Semua RT
+                </Text>
+              </TouchableOpacity>
+              {LIST_RT.map(rt => (
+                <TouchableOpacity
+                  key={rt}
+                  style={[
+                    { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 16, backgroundColor: '#eee', marginRight: 8 },
+                    selectedRt === rt && { backgroundColor: '#00216e' }
+                  ]}
+                  onPress={() => setSelectedRt(rt)}
+                >
+                  <Text style={[{ fontSize: 12, color: '#444', fontWeight: 'bold' }, selectedRt === rt && { color: '#fff' }]}>
+                    {rt}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </>
+          )}
+        </ScrollView>
+      </View>
+
       <View style={styles.statsRow}>
         <View style={styles.statCard}>
-          <Text style={styles.statVal}>{list.length}</Text>
+          <Text style={styles.statVal}>{scopedList.length}</Text>
           <Text style={styles.statLbl}>Total</Text>
         </View>
         <View style={styles.statCard}>
-          <Text style={[styles.statVal, { color: '#bb0013' }]}>{list.filter(p => p.penting).length}</Text>
+          <Text style={[styles.statVal, { color: '#bb0013' }]}>{scopedList.filter(p => p.penting).length}</Text>
           <Text style={styles.statLbl}>Penting</Text>
         </View>
       </View>
@@ -107,7 +212,7 @@ export default function PengumumanScreen() {
       {loading ? (
         <CardListSkeleton count={4} />
       ) : (
-        <FlatList style={{ flex: 1 }} data={list} renderItem={renderItem} keyExtractor={i => i.id} contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}
+        <FlatList style={{ flex: 1 }} data={scopedList} renderItem={renderItem} keyExtractor={i => i.id} contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}
           ListEmptyComponent={<View style={styles.center}><Text style={styles.emptyText}>Belum ada pengumuman</Text></View>}
         />
       )}
@@ -131,6 +236,25 @@ export default function PengumumanScreen() {
                   </TouchableOpacity>
                 ))}
               </View>
+
+              <Text style={styles.inputLabel}>Target Wilayah RT</Text>
+              {isRtScoped && activeRt ? (
+                <View style={[styles.chip, styles.chipActive, { alignSelf: 'flex-start' }]}>
+                  <Text style={[styles.chipText, styles.chipTextActive]}>{activeRt}</Text>
+                </View>
+              ) : (
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 6 }}>
+                  {['Semua RT', ...LIST_RT].map(rt => (
+                    <TouchableOpacity
+                      key={rt}
+                      style={[styles.chip, (form.rt || 'Semua RT') === rt && styles.chipActive]}
+                      onPress={() => setForm(p => ({ ...p, rt }))}
+                    >
+                      <Text style={[styles.chipText, (form.rt || 'Semua RT') === rt && styles.chipTextActive]}>{rt}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+              )}
 
               <Text style={styles.inputLabel}>Isi Pengumuman</Text>
               <TextInput style={[styles.input, { height: 120, textAlignVertical: 'top' }]} placeholder="Tuliskan isi pengumuman lengkap..." placeholderTextColor="#999" multiline value={form.isi} onChangeText={t => setForm(p => ({ ...p, isi: t }))} />

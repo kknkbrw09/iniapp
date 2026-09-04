@@ -224,9 +224,20 @@ const FALLBACK_ACTIVITY = [
   { text: 'Surat Pengantar diterbitkan untuk Agus Setiawan', time: '2024-10-18', icon: '📄' },
 ];
 
+const isRtMatch = (itemRt?: string, targetRt?: string) => {
+  if (!targetRt || targetRt.toLowerCase() === 'semua') return true;
+  if (!itemRt) return false;
+  const num1 = itemRt.replace(/\D/g, '');
+  const num2 = targetRt.replace(/\D/g, '');
+  if (num1 && num2) {
+    return parseInt(num1, 10) === parseInt(num2, 10);
+  }
+  return itemRt.toLowerCase().trim() === targetRt.toLowerCase().trim();
+};
+
 export default function DashboardScreen() {
   const navigation = useNavigation<any>();
-  const { role, adminName, logout } = useAuth();
+  const { role, userRt, guestRt, isRwAdmin, isRtAdmin, isAdmin, adminName, logout } = useAuth();
   const [stats, setStats] = useState<Stats>(FALLBACK_STATS);
   const [loading, setLoading] = useState(true);
   const [recentActivity, setRecentActivity] = useState<{ text: string; time: string; icon: string }[]>(FALLBACK_ACTIVITY);
@@ -237,17 +248,20 @@ export default function DashboardScreen() {
   const [termsModalVisible, setTermsModalVisible] = useState(false);
   const [loginModalVisible, setLoginModalVisible] = useState(false);
 
+  const activeRt = userRt || guestRt;
+  const isRtScoped = !!activeRt && !isRwAdmin;
+
   useFocusEffect(
     useCallback(() => {
       DataCache.clear('dashboard_stats');
       fetchStats();
-    }, [])
+    }, [userRt, guestRt, isRtAdmin, isRwAdmin])
   );
 
   useEffect(() => {
     DataCache.clear('dashboard_stats');
     fetchStats();
-  }, []);
+  }, [userRt, guestRt, isRtAdmin, isRwAdmin]);
 
   const fetchStats = async () => {
     try {
@@ -266,11 +280,11 @@ export default function DashboardScreen() {
         const to = from + pageSize - 1;
         const res = await supabase
           .from('warga')
-          .select('id, status_keluarga, created_at', { count: 'exact' })
+          .select('id, status_keluarga, rt, created_at', { count: 'exact' })
           .range(from, to);
 
         if (res.error || !res.data) break;
-        if (res.count) exactWargaCount = res.count;
+        if (res.count && !isRtScoped) exactWargaCount = res.count;
 
         allWargaRows = allWargaRows.concat(res.data);
         if (res.data.length < pageSize || (res.count && allWargaRows.length >= res.count)) {
@@ -281,36 +295,58 @@ export default function DashboardScreen() {
       }
 
       const [kegiatanRes, iuranRes, keuanganRes, pengumumanRes, suratRes] = await Promise.all([
-        supabase.from('kegiatan').select('id'),
-        supabase.from('iuran').select('status'),
-        supabase.from('keuangan').select('jenis, jumlah, tanggal, created_at'),
-        supabase.from('pengumuman').select('judul').order('created_at', { ascending: false }).limit(1),
-        supabase.from('surat_pengantar').select('nama_pemohon, created_at').order('created_at', { ascending: false }).limit(3),
+        supabase.from('kegiatan').select('id, rt'),
+        supabase.from('iuran').select('status, rt, nama_warga'),
+        supabase.from('keuangan').select('jenis, jumlah, rt, tanggal, created_at'),
+        supabase.from('pengumuman').select('judul, rt').order('created_at', { ascending: false }).limit(1),
+        supabase.from('surat_pengantar').select('nama_pemohon, rt, created_at').order('created_at', { ascending: false }).limit(5),
       ]);
 
       logger.addLog('SUCCESS', 'HTTP 200 OK — GET /dashboard_stats', 'Successfully loaded stats from Supabase');
 
-      const totalWarga = exactWargaCount || allWargaRows.length || (cachedWarga?.length || 8);
-      const totalKK = (allWargaRows.length > 0)
-        ? allWargaRows.filter((w: any) => (w.status_keluarga || w.peran_kk || w.hubungan_kk || '').toString().trim().toLowerCase() === 'kepala keluarga').length
-        : (cachedWarga
-            ? cachedWarga.filter((w: any) => (w.hubunganKk || w.peranKk || '').toString().trim().toLowerCase() === 'kepala keluarga').length
-            : 5);
-      const totalKegiatan = kegiatanRes.data ? kegiatanRes.data.length : 0;
+      // Filter rows if RT Scoped
+      let filteredWargaRows = allWargaRows;
+      if (isRtScoped && activeRt) {
+        filteredWargaRows = allWargaRows.filter((w: any) => isRtMatch(w.rt, activeRt));
+      }
 
-      const iuranData = iuranRes.data || [];
+      const totalWarga = isRtScoped && activeRt
+        ? filteredWargaRows.length
+        : (exactWargaCount || allWargaRows.length || (cachedWarga?.length || 8));
+
+      const totalKK = filteredWargaRows.filter((w: any) =>
+        (w.status_keluarga || w.peran_kk || w.hubungan_kk || '').toString().trim().toLowerCase() === 'kepala keluarga'
+      ).length || (isRtScoped ? Math.ceil(filteredWargaRows.length / 2) : 5);
+
+      const kegiatanData = kegiatanRes.data || [];
+      const totalKegiatan = isRtScoped && activeRt
+        ? kegiatanData.filter((k: any) => !k.rt || k.rt === 'RW 09' || k.rt.toLowerCase() === 'semua' || isRtMatch(k.rt, activeRt)).length
+        : kegiatanData.length;
+
+      let iuranData = iuranRes.data || [];
+      if (isRtScoped && activeRt) {
+        iuranData = iuranData.filter((i: any) => isRtMatch(i.rt, activeRt));
+      }
       const iuranLunas = iuranData.filter((i: any) => i.status === 'Lunas').length;
       const iuranTotal = iuranData.length;
 
-      const keuanganData = (keuanganRes.data || []).map((k: any) => ({
+      let filteredKeuangan = (keuanganRes.data || []);
+      if (isRtScoped && activeRt) {
+        filteredKeuangan = filteredKeuangan.filter((k: any) => isRtMatch(k.rt, activeRt));
+      } else if (isRwAdmin) {
+        filteredKeuangan = filteredKeuangan.filter((k: any) => !k.rt || k.rt === 'RW 09' || (k.rt || '').toString().toLowerCase().includes('rw'));
+      }
+
+      const keuanganData = filteredKeuangan.map((k: any) => ({
         jenis: k.jenis,
         jumlah: Number(k.jumlah),
         tanggal: k.tanggal || k.created_at,
         created_at: k.created_at,
+        rt: k.rt,
       }));
       setRawKeuangan(keuanganData);
 
-      const wargaData = (allWargaRows.length > 0 ? allWargaRows : (cachedWarga || [])).map((w: any) => ({ created_at: w.created_at }));
+      const wargaData = (filteredWargaRows.length > 0 ? filteredWargaRows : (cachedWarga || [])).map((w: any) => ({ created_at: w.created_at }));
       setRawWarga(wargaData);
 
       const masuk = keuanganData.filter((k: any) => k.jenis === 'pemasukan').reduce((s: number, k: any) => s + Number(k.jumlah), 0);
@@ -319,11 +355,17 @@ export default function DashboardScreen() {
       const pengumumanTerbaru = pengumumanRes.data?.[0]?.judul || '';
 
       const activity = (suratRes.data && suratRes.data.length > 0)
-        ? (suratRes.data.map((s: any) => ({
-            text: `Surat Pengantar diterbitkan untuk ${s.nama_pemohon}`,
-            time: s.created_at ? new Date(s.created_at).toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta', day: '2-digit', month: 'short', year: 'numeric' }) + ' WIB' : '',
-            icon: '📄',
-          })))
+        ? (suratRes.data
+            .filter((s: any) => {
+              if (!isRtScoped || !activeRt) return true;
+              return isRtMatch(s.rt, activeRt);
+            })
+            .slice(0, 3)
+            .map((s: any) => ({
+              text: `Surat Pengantar diterbitkan untuk ${s.nama_pemohon}`,
+              time: s.created_at ? new Date(s.created_at).toLocaleDateString('id-ID', { timeZone: 'Asia/Jakarta', day: '2-digit', month: 'short', year: 'numeric' }) + ' WIB' : '',
+              icon: '📄',
+            })))
         : [];
 
       const newStats = { totalWarga, totalKK, totalKegiatan, iuranLunas, iuranTotal, saldo: masuk - keluar, pengumumanTerbaru };
@@ -353,10 +395,15 @@ export default function DashboardScreen() {
     return 'Rp ' + n.toLocaleString('id-ID');
   };
 
-  const cards = [
+  const cards = isAdmin ? [
+    { label: activeRt ? `Kas ${activeRt}` : 'Kas RW 09', value: fmt(saldoVal), iconType: 'keuangan', color: '#bb0013', sub: 'Pemasukan & Pengeluaran', screen: 'Keuangan' },
     { label: 'Total Jiwa', value: totalWargaVal.toLocaleString(), iconType: 'warga', color: '#00216e', sub: `${totalKKVal} Kepala Keluarga`, screen: 'Warga' },
-    { label: 'Saldo Kas', value: fmt(saldoVal), iconType: 'keuangan', color: '#bb0013', sub: 'Pemasukan & Pengeluaran', screen: 'Keuangan' },
     { label: 'Total Kegiatan', value: totalKegiatanVal.toString(), iconType: 'kegiatan', color: '#444653', sub: 'Terdaftar', screen: 'Kegiatan' },
+    { label: 'Surat Pengantar', value: 'Ajukan ➔', iconType: 'iuran', color: '#00216e', sub: 'Layanan Online Warga', screen: 'Surat' },
+  ] : [
+    { label: 'Total Jiwa', value: totalWargaVal.toLocaleString(), iconType: 'warga', color: '#00216e', sub: activeRt ? `Warga ${activeRt}` : `${totalKKVal} Kepala Keluarga`, screen: 'Warga' },
+    { label: 'Total Kegiatan', value: totalKegiatanVal.toString(), iconType: 'kegiatan', color: '#444653', sub: activeRt ? `Agenda ${activeRt} & RW` : 'Agenda RW & RT', screen: 'Kegiatan' },
+    { label: 'Pengumuman', value: 'Lihat ➔', iconType: 'keuangan', color: '#bb0013', sub: 'Info & Berita Terkini', screen: 'Pengumuman' },
     { label: 'Surat Pengantar', value: 'Ajukan ➔', iconType: 'iuran', color: '#00216e', sub: 'Layanan Online Warga', screen: 'Surat' },
   ];
 
@@ -535,15 +582,15 @@ export default function DashboardScreen() {
   const wargaTrend = getWargaTrendData();
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         {/* Header */}
         <View style={styles.header}>
           <View>
-            <Text style={styles.greeting}>{role === 'admin' ? 'Selamat datang,' : 'Mode Tamu / Warga,'}</Text>
-            <Text style={styles.name}>{role === 'admin' ? (adminName || 'Pengurus RW 09') : 'Warga RW 09'}</Text>
+            <Text style={styles.greeting}>{isAdmin ? 'Selamat datang,' : (guestRt ? `Wilayah ${guestRt}` : 'Mode Tamu / Warga,')}</Text>
+            <Text style={styles.name}>{isAdmin ? (adminName || (userRt ? `Pengurus ${userRt}` : 'Pengurus RW 09')) : (guestRt ? `Warga ${guestRt}` : 'Warga RW 09')}</Text>
           </View>
-          {role === 'admin' ? (
+          {isAdmin ? (
             <TouchableOpacity style={styles.logoutBtn} onPress={logout}>
               <Text style={styles.logoutText}>Logout</Text>
             </TouchableOpacity>
@@ -572,7 +619,7 @@ export default function DashboardScreen() {
         ) : (
           <>
             {/* Stat Cards */}
-            <Text style={styles.sectionTitle}>Statistik RW 09</Text>
+            <Text style={styles.sectionTitle}>{activeRt ? `Statistik ${activeRt}` : 'Statistik RW 09'}</Text>
             <View style={styles.grid}>
               {cards.map((c, i) => (
                 <TouchableOpacity
@@ -621,8 +668,8 @@ export default function DashboardScreen() {
               </View>
             </View>
 
-            {/* Chart 1: Pertumbuhan Uang Kas */}
-            {(() => {
+            {/* Chart 1: Pertumbuhan Uang Kas (Khusus Pengurus / Admin) */}
+            {isAdmin && (() => {
               const isUp = !kasTrend.growth.includes('▼');
               const themeColor = isUp ? '#00216e' : '#bb0013';
               return (
@@ -631,7 +678,9 @@ export default function DashboardScreen() {
                     <View style={{ flex: 1, marginRight: 8 }}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 }}>
                         <KeuanganIcon color={themeColor} size={20} />
-                        <Text style={styles.chartTitle}>Pertumbuhan Saldo Kas</Text>
+                        <Text style={styles.chartTitle}>
+                          {activeRt ? `Pertumbuhan Saldo Kas (${activeRt})` : 'Pertumbuhan Saldo Kas RW 09'}
+                        </Text>
                       </View>
                       <Text style={styles.chartSub}>{kasTrend.sub}</Text>
                     </View>
@@ -654,7 +703,7 @@ export default function DashboardScreen() {
                     <View style={{ flex: 1, marginRight: 8 }}>
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 }}>
                         <WargaIcon color={themeColor} size={20} />
-                        <Text style={styles.chartTitle}>Pertumbuhan Jumlah Warga</Text>
+                        <Text style={styles.chartTitle}>{activeRt ? `Pertumbuhan Warga (${activeRt})` : 'Pertumbuhan Jumlah Warga'}</Text>
                       </View>
                       <Text style={styles.chartSub}>{wargaTrend.sub}</Text>
                     </View>
@@ -690,7 +739,7 @@ export default function DashboardScreen() {
             {/* About App Info Footer Button */}
             <View style={styles.aboutWrap}>
               <TouchableOpacity style={styles.aboutBtn} onPress={() => setAboutModalVisible(true)}>
-                <Text style={styles.aboutBtnText}>Tentang Aplikasi & Versi (v1.0.0)</Text>
+                <Text style={styles.aboutBtnText}>Tentang Aplikasi & Versi (v1.2.3)</Text>
               </TouchableOpacity>
             </View>
           </>

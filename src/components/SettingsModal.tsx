@@ -92,13 +92,11 @@ export default function SettingsModal({ visible, onClose }: SettingsModalProps) 
       <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
         <View style={styles.overlay}>
           <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
             style={styles.keyboardAvoidingContainer}
           >
             <TouchableWithoutFeedback onPress={() => {}}>
               <View style={styles.modalBox}>
-                <View style={styles.sheetHandle} />
-
                 <View style={styles.header}>
                   <View style={styles.titleRow}>
                     <View style={styles.iconBadge}>
@@ -203,41 +201,43 @@ export default function SettingsModal({ visible, onClose }: SettingsModalProps) 
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(15, 23, 42, 0.72)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
   },
   keyboardAvoidingContainer: {
     width: '100%',
-    justifyContent: 'flex-end',
+    maxWidth: 400,
+    alignItems: 'center',
   },
   modalBox: {
-    backgroundColor: '#fff',
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 20,
-    paddingBottom: Platform.OS === 'ios' ? 40 : 30,
-  },
-  sheetHandle: {
-    width: 40,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: '#ddd',
-    alignSelf: 'center',
-    marginBottom: 15,
+    width: '100%',
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    borderRadius: 24,
+    padding: 24,
+    borderWidth: 1.5,
+    borderColor: 'rgba(255, 255, 255, 0.85)',
+    shadowColor: '#0f172a',
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.3,
+    shadowRadius: 28,
+    elevation: 14,
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     marginBottom: 16,
-    paddingBottom: 12,
+    paddingBottom: 14,
     borderBottomWidth: 1,
-    borderBottomColor: '#f0f0f0',
+    borderBottomColor: '#f1f5f9',
   },
   titleRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+    flex: 1,
   },
   iconBadge: {
     width: 38,
@@ -254,60 +254,73 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     fontSize: 11,
-    color: '#666',
+    color: '#64748b',
+    marginTop: 1,
   },
   closeBtn: {
     padding: 6,
   },
   closeText: {
-    fontSize: 20,
-    color: '#999',
+    fontSize: 18,
+    color: '#94a3b8',
+    fontWeight: 'bold',
   },
   label: {
     fontSize: 10,
     fontWeight: 'bold',
-    color: '#444653',
+    color: '#00216e',
     letterSpacing: 1,
     marginBottom: 6,
-    marginTop: 10,
+    marginTop: 12,
+    textAlign: 'left',
   },
   input: {
-    backgroundColor: '#f5f5f5',
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-    borderRadius: 10,
+    backgroundColor: '#f8fafc',
+    borderWidth: 1.5,
+    borderColor: '#cbd5e1',
+    borderRadius: 14,
     paddingHorizontal: 14,
-    paddingVertical: 11,
+    paddingVertical: 12,
     fontSize: 14,
-    color: '#333',
+    color: '#00216e',
+    textAlign: 'left',
+    fontWeight: '600',
   },
   passwordContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#f5f5f5',
-    borderWidth: 1,
-    borderColor: '#e0e0e0',
-    borderRadius: 10,
+    backgroundColor: '#f8fafc',
+    borderWidth: 1.5,
+    borderColor: '#cbd5e1',
+    borderRadius: 14,
+    paddingRight: 6,
   },
   passwordInput: {
     flex: 1,
     paddingHorizontal: 14,
-    paddingVertical: 11,
+    paddingVertical: 12,
     fontSize: 14,
-    color: '#333',
+    color: '#00216e',
+    textAlign: 'left',
+    fontWeight: '600',
   },
   eyeBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 11,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
     justifyContent: 'center',
     alignItems: 'center',
   },
   submitBtn: {
     backgroundColor: '#00216e',
-    borderRadius: 12,
+    borderRadius: 14,
     paddingVertical: 14,
     alignItems: 'center',
-    marginTop: 20,
+    marginTop: 22,
+    shadowColor: '#00216e',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
   },
   submitText: {
     color: '#fff',
@@ -320,7 +333,8 @@ const styles = StyleSheet.create({
     marginTop: 6,
   },
   cancelText: {
-    color: '#666',
+    color: '#64748b',
     fontSize: 13,
+    fontWeight: '500',
   },
 });

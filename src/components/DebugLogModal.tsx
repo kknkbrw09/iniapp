@@ -45,7 +45,7 @@ export default function DebugLogModal() {
             {/* Header */}
             <View style={styles.modalHead}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Text style={styles.modalTitle}>🛠️ Debugger & Log API</Text>
+                <Text style={styles.modalTitle}>Debugger & Log API</Text>
                 <View style={styles.countBadge}>
                   <Text style={styles.countText}>{logs.length} Log</Text>
                 </View>
@@ -117,7 +117,7 @@ export default function DebugLogModal() {
                   Alert.alert('Sukses', 'Seluruh log telah dibersihkan');
                 }}
               >
-                <Text style={styles.clearBtnText}>🗑️ Bersihkan Log</Text>
+                <Text style={styles.clearBtnText}>Bersihkan Log</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.closeBtn} onPress={() => setModalVisible(false)}>
                 <Text style={styles.closeBtnText}>Tutup</Text>
